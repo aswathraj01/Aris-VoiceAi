@@ -1,13 +1,1 @@
-{
-  "user_name": "Aswath",
-  "assistant_name": "Aris",
-  "voice": "male",
-  "wake_word": "aris",
-  "user_nickname": "bro",
-  "personality": "friendly",
-  "user_favorites": {
-    "music": "lofi",
-    "search_engine": "duckduckgo",
-    "text_editor": "vscode"
-  }
-}
+{"user_name": "Aswath", "assistant_name": "Aris", "voice": "male", "wake_word": "aris", "user_nickname": "bro", "personality": "friendly", "user_favorites": {"music": "lofi", "search_engine": "duckduckgo", "text_editor": "vscode"}, "memory": {"last_command": "exit exit exit", "previous_conversations": [], "birthday": "October 10th", "favorite_food": "Biryani"}}
