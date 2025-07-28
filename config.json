@@ -1,0 +1,13 @@
+{
+  "user_name": "Aswath",
+  "assistant_name": "Aris",
+  "voice": "male",
+  "wake_word": "aris",
+  "user_nickname": "bro",
+  "personality": "friendly",
+  "user_favorites": {
+    "music": "lofi",
+    "search_engine": "duckduckgo",
+    "text_editor": "vscode"
+  }
+}
