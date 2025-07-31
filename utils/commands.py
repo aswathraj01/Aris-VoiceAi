@@ -5,7 +5,7 @@ import pyautogui
 import platform
 import subprocess
 from speech.speaker import Speaker
-from aris_brain import ask_aris  # LLama-based response generator
+from aris_brain import ask_aris_llm  # LLama-based response generator
 import psutil
 
 speaker = Speaker()
@@ -24,7 +24,7 @@ def open_app(command):
     app_name = extract_app_name(command)
 
     if not app_name:
-        response = ask_aris("The user asked to open an app but didn't mention which one. Give a helpful response.")
+        response = ask_aris_llm("The user asked to open an app but didn't mention which one. Give a helpful response.")
         speak(response)
         return response
 
@@ -43,15 +43,15 @@ def open_app(command):
         # Add more apps here...
 
         if opened:
-            response = ask_aris(f"tell the user that you have opened {app_name} successfully, and what should you do next? nothing more.")
+            response = ask_aris_llm(f"tell the user that you have opened {app_name} successfully, and what should you do next? nothing more.")
         else:
-            response = ask_aris(f"You couldn't find a way to open {app_name}. Give a polite response explaining that you couldn't find the app, and ask if they want to try something else.")
+            response = ask_aris_llm(f"You couldn't find a way to open {app_name}. Give a polite response explaining that you couldn't find the app, and ask if they want to try something else.")
 
         return response
 
 
     except Exception as e:
-        response = ask_aris(f"I tried to open {app_name} but failed with this error: {str(e)}. Respond accordingly.")
+        response = ask_aris_llm(f"I tried to open {app_name} but failed with this error: {str(e)}. Respond accordingly.")
         speak(response)
         return response
 
@@ -59,7 +59,7 @@ def close_app(command):
     app_name = extract_app_name(command)
 
     if not app_name:
-        response = ask_aris("The user asked to close an app but didn't specify which one. Respond politely and ask for clarification.")
+        response = ask_aris_llm("The user asked to close an app but didn't specify which one. Respond politely and ask for clarification.")
         speak(response)
         return response
 
@@ -77,24 +77,36 @@ def close_app(command):
             closed = True
 
         if closed:
-            response = ask_aris(f"Calculator (or {app_name}) closed successfully. Respond as a friendly assistant.")
+            response = ask_aris_llm(f"Calculator (or {app_name}) closed successfully. Respond as a friendly assistant.")
         else:
-            response = ask_aris(f"I couldn't find the app '{app_name}' running, so I couldn't close it. Ask the user if they want to try something else.")
+            response = ask_aris_llm(f"I couldn't find the app '{app_name}' running, so I couldn't close it. Ask the user if they want to try something else.")
 
         speak(response)
         return response
 
     except Exception as e:
-        response = ask_aris(f"I tried to close {app_name} but got this error: {str(e)}. Respond accordingly.")
+        response = ask_aris_llm(f"I tried to close {app_name} but got this error: {str(e)}. Respond accordingly.")
         speak(response)
         return response
 
 
 def take_screenshot():
-    filename = "screenshot.png"
+    index = 1
+    while os.path.exists(f"screenshot_{index}.png"):
+        index += 1
+
+    filename = f"screenshot/screenshot_{index}.png"
     pyautogui.screenshot().save(filename)
-    speak("Screenshot taken and saved as screenshot.png.")
-    return "Screenshot saved as screenshot.png."
+
+    if index == 1:
+        response = ask_aris_llm(f"A screenshot was taken and saved as {filename}. Respond to the user accordingly.")
+        speak(response)
+
+    else:
+        response = ask_aris_llm(f"Another screenshot was taken and saved as {filename}. Respond to the user accordingly. and ask if they need anything else.")
+        speak(response)
+
+    return
 
 
 def lock_system():
@@ -122,3 +134,4 @@ def restart():
     elif platform.system() == "Linux":
         os.system("reboot")
     return "System is restarting."
+

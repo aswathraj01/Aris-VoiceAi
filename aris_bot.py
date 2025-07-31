@@ -3,8 +3,14 @@ from speech.speaker import Speaker
 import json
 from utils import commands
 from ollama import Client
+import re
+import os
 import time
 from utils.commands import close_app
+from utils.code_editor import write_to_file, replace_line, open_in_vscode, append_to_file
+from aris_brain import ask_aris_llm # LLama-based response generator
+from utils.web_search import search_youtube
+
 
 
 client = Client(host='http://localhost:11434')
@@ -27,8 +33,50 @@ def generate_response(prompt):
     )
     return response['message']['content']
 
+
+
+def extract_code_blocks(text):
+    code_blocks = re.findall(r"```(?:python)?\s*(.*?)```", text, re.DOTALL)
+    return [block.strip() for block in code_blocks]
+
+def ask_aris(prompt):
+    print(f"Prompt to Aris: {prompt}")
+    full_prompt = f"Write Python code for this: {prompt}"
+    response = ask_aris_llm(full_prompt)  # calling aris_brain's ask_aris renamed to avoid conflict
+    print("Aris raw response:", response)
+    speak("Let me think...")
+
+    # Extract code only
+    code_blocks = extract_code_blocks(response)
+
+    if not code_blocks:
+        speak("Hmm, I didn't find any valid code in that response.")
+        return None
+
+    elif len(code_blocks) == 1:
+        return code_blocks[0]
+
+    else:
+        # Multiple code blocks found — ask the user
+        speak("I found multiple versions. Do you want the first or second one?")
+        user_choice = listen().lower()
+        if "first" in user_choice:
+            return code_blocks[0]
+        elif "second" in user_choice:
+            return code_blocks[1]
+        else:
+            speak("I didn't get that. Using the first version.")
+            return code_blocks[0]
+        
+
+last_intent = None  # global or maintained in a class
+
+
 # Command handler
 def handle_command(command):
+    
+    global last_intent
+
     command = command.lower()
 
     if "exit" in command or "quit" in command or "stop" in command:
@@ -78,6 +126,60 @@ def handle_command(command):
         speak(result)
         return True
 
+    elif "write a code" in command or "add a function" in command:
+        speak("Okay, tell me what to code.")
+        code_prompt = listen()
+        aris_response = ask_aris(code_prompt)
+
+        if "def" in aris_response or "print" in aris_response or "import" in aris_response:
+            filename = "generated_code.py"
+            result = append_to_file(filename, aris_response)
+            speak(result)
+            open_in_vscode(filename)
+        else:
+            speak("Got it. But I didn't detect any code to save.")
+        return True
+    
+    elif "search" in command.lower():
+        command_lower = command.lower()
+
+        if "youtube" in command_lower:
+            # Extract query from commands like:
+            # "search for relaxing music on youtube"
+            query = command_lower
+
+            # Remove known phrases
+            for phrase in ["search for", "search", "on youtube", "youtube"]:
+                query = query.replace(phrase, "")
+            
+            query = query.strip()
+
+            if not query:
+                speaker.speak("What do you want me to search for on YouTube?")
+                query = listener.listen().strip()
+
+            response = search_youtube(query)
+            speaker.speak(response)
+
+        else:
+            # If "youtube" is not mentioned, ask the user where to search
+            speaker.speak("Should I search that on YouTube or Google?")
+            platform = listener.listen().lower()
+
+            # Extract the actual query
+            if "search for" in command_lower:
+                query = command_lower.split("search for")[-1].strip()
+            else:
+                query = command_lower.split("search")[-1].strip()
+
+            if "youtube" in platform:
+                response = search_youtube(query)
+                speaker.speak(response)
+            else:
+                speaker.speak("Sorry, I can only search YouTube for now.")
+
+
+    # System commands
     elif "lock" in command:
         speak(commands.lock_system())
         return True
@@ -91,7 +193,6 @@ def handle_command(command):
         return True
 
     return False  # Not a recognized command
-
 
 # Main loop
 if __name__ == "__main__":
