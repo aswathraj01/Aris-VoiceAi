@@ -61,7 +61,7 @@ def close_app(command):
     if not app_name:
         response = ask_aris_llm("The user asked to close an app but didn't specify which one. Respond politely and ask for clarification.")
         speak(response)
-        return response
+        return 
 
     try:
         closed = False
