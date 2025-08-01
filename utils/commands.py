@@ -135,3 +135,13 @@ def restart():
         os.system("reboot")
     return "System is restarting."
 
+def intelligent_mode():
+    speak("Switching to intelligent mode.")
+    subprocess.Popen(r"C:\Users\aswat\AppData\Local\Programs\Ollama\ollama app.exe")
+    return "Intelligent mode activated. You can now ask me anything."
+
+
+def deactivate_intelligent_mode():
+    speak("Deactivating intelligent mode.")
+    os.system("taskkill /f /im \"ollama app.exe\"")
+    return "Intelligent mode deactivated."

@@ -125,7 +125,21 @@ def handle_command(command):
         result = commands.take_screenshot()
         speak(result)
         return True
+    
+    
+    #intelligent mode
+    elif "activate intelligent mode" in command or "start intelligent mode" in command:
+        response = commands.intelligent_mode()
+        speak(response)
+        return True
 
+    elif "deactivate intelligent mode" in command or "normal mode" in command:
+        response = commands.deactivate_intelligent_mode()
+        speak(response)
+        return True
+
+
+    #code-related commands
     elif "write a code" in command or "add a function" in command:
         speak("Okay, tell me what to code.")
         code_prompt = listen()
@@ -166,7 +180,6 @@ def handle_command(command):
             speaker.speak("Sorry, I can only search YouTube for now.")
 
 
-
     # System commands
     elif "lock" in command:
         speak(commands.lock_system())
@@ -180,7 +193,7 @@ def handle_command(command):
         speak(commands.restart())
         return True
 
-    return False  # Not a recognized command
+    return False  
 
 # Main loop
 if __name__ == "__main__":

@@ -2,6 +2,20 @@ from speech.recognizer import listen
 from speech.speaker import Speaker
 import json
 from utils import commands
+from aris_ui import ArisUI
+
+# Initialize UI
+ui = ArisUI()
+
+# Update status at different points
+ui.update_status("Listening...")
+# when listening...
+
+ui.update_status("Analyzing...")
+# when processing...
+
+ui.update_status("Responding...")
+# when speaking...
 
 
 speaker = Speaker()
