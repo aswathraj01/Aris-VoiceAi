@@ -1,22 +1,22 @@
 {
-  "user_name": "Aswath",
-  "assistant_name": "Aris",
-  "wake_word": "aris",
-  "user_nickname": "bro",
-  "personality": "friendly",
-  "user_favorites": {
-    "music": "lofi",
-    "search_engine": "duckduckgo",
-    "text_editor": "vscode"
-  },
-  "memory": {
-    "last_command": "exit",
-    "previous_conversations": [],
-    "birthday": "10 October",
-    "favorite_food": "Biryani"
-  },
-  "voice": "female",
-  "use_elevenlabs": true,
-  "elevenlabs_api_key": "sk_41ffb677d5b8f99fc8cebdcbb6ab0dc192cac9267a262dd9",
-  "elevenlabs_voice": "21m00Tcm4TlvDq8ikWAM"
+    "user_name": "Aswath",
+    "assistant_name": "Aris",
+    "wake_word": "aris",
+    "user_nickname": "bro",
+    "personality": "friendly",
+    "user_favorites": {
+        "music": "lofi",
+        "search_engine": "duckduckgo",
+        "text_editor": "vscode"
+    },
+    "memory": {
+        "last_command": "exit",
+        "previous_conversations": [],
+        "birthday": "10 October",
+        "favorite_food": "Biryani"
+    },
+    "voice": "female",
+    "use_elevenlabs": true,
+    "elevenlabs_api_key": "sk_41ffb677d5b8f99fc8cebdcbb6ab0dc192cac9267a262dd9",
+    "elevenlabs_voice": "21m00Tcm4TlvDq8ikWAM"
 }

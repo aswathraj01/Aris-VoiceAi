@@ -137,7 +137,7 @@ def restart():
 
 def intelligent_mode():
     speak("Switching to intelligent mode.")
-    subprocess.Popen(r"C:\Users\aswat\AppData\Local\Programs\Ollama\ollama app.exe")
+    subprocess.Popen(r"C:\Users\aswat\AppData\Local\Programs\Ollama\ollama app.exe", shell=True)
     return "Intelligent mode activated. You can now ask me anything."
 
 

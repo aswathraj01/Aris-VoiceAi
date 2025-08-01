@@ -10,6 +10,7 @@ from utils.commands import close_app
 from utils.code_editor import write_to_file, replace_line, open_in_vscode, append_to_file
 from aris_brain import ask_aris_llm # LLama-based response generator
 from utils.web_search import search_youtube
+from utils.memory_manager import append_to_conversation
 
 
 
@@ -23,16 +24,6 @@ with open("config.json") as f:
 
 user_name = config["user_name"]
 assistant_name = config["assistant_name"]
-
-# LLaMA fallback response
-def generate_response(prompt):
-    full_prompt = f"The following is a conversation with {assistant_name}, a helpful AI assistant.\n\nHuman: {prompt}\n{assistant_name}:"
-    response = client.chat(
-        model='llama3',
-        messages=[{"role": "user", "content": full_prompt}]
-    )
-    return response['message']['content']
-
 
 
 def extract_code_blocks(text):
@@ -128,10 +119,20 @@ def handle_command(command):
     
     
     #intelligent mode
-    elif "activate intelligent mode" in command or "start intelligent mode" in command:
+    elif any(phrase in command for phrase in [
+        "turn on intelligent mode",
+        "activate intelligent mode",
+        "start intelligent mode",
+        "switch to intelligent mode",
+        "turn on intelligent",
+        "activate intelligent",
+        "start intelligent",
+        "switch to intelligent",
+    ]):
         response = commands.intelligent_mode()
         speak(response)
         return True
+
 
     elif "deactivate intelligent mode" in command or "normal mode" in command:
         response = commands.deactivate_intelligent_mode()
@@ -170,7 +171,7 @@ def handle_command(command):
 
             if not query:
                 speaker.speak("What do you want me to search for on YouTube?")
-                query = listener.listen().strip()
+                query = Listener.listen().strip()
 
             # Use the improved YouTube search and control function
             search_result = search_youtube(query)  # It will handle everything
@@ -197,7 +198,7 @@ def handle_command(command):
 
 # Main loop
 if __name__ == "__main__":
-    speak(f"Hello, this is {assistant_name} speaking.")
+    speak(f"OK, {assistant_name} is active now.")
     time.sleep(0.5)
 
     while True:
@@ -207,5 +208,5 @@ if __name__ == "__main__":
             if result == "exit":
                 break
             elif result is False:
-                reply = generate_response(command)
+                reply = ask_aris_llm(command)
                 speak(reply)

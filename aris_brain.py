@@ -1,23 +1,38 @@
 import requests
-from web_fallback import search_and_get_answer  # Import the web search fallback
+from utils.web_fallback import search_and_get_answer
+from utils.memory_manager import append_to_conversation, add_conversation, load_conversations  # ✅ fixed import
+
+def get_contextual_prompt(user_prompt):
+    memory = load_conversations()  # ✅ fixed typo: was 'load_conversation'
+    history = "\n".join([f"User: {item['user']}\nAris: {item['aris']}" for item in memory[-5:]])
+    return f"{history}\nUser: {user_prompt}\nAris:"
 
 def ask_aris_llm(prompt):
+    full_prompt = get_contextual_prompt(prompt)
+
     try:
         response = requests.post(
             "http://localhost:11434/api/generate",
             json={
                 "model": "llama3",
-                "prompt": prompt,
+                "prompt": full_prompt,
                 "stream": False
             }
         )
 
         if response.status_code == 200:
             data = response.json()
-            llm_reply = data.get("response", "")
-            if not llm_reply or "I don't know" in llm_reply.lower() or "unsure" in llm_reply.lower():
-                return search_and_get_answer(prompt)  # Fallback to web
+            llm_reply = data.get("response", "").strip()
+
+            # Fallback if the model is not confident
+            if not llm_reply or any(x in llm_reply.lower() for x in ["i don't know", "not sure", "unsure"]):
+                fallback = search_and_get_answer(prompt)
+                append_to_conversation(prompt, fallback)
+                return fallback
+
+            append_to_conversation(prompt, llm_reply)
             return llm_reply
+
         else:
             return f"Error: {response.status_code} - {response.text}"
 
