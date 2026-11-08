@@ -15,6 +15,8 @@
 npm start
 ```
 
+For live diagnostics, run `npm run debug`. This opens ARIS with a Debug Console window and prints app/worker logs to the launching terminal. For an installed build, start `ARIS.exe --debug`; the same console opens. Logs are also written to `%LOCALAPPDATA%\ARIS\logs\aris.log`. Diagnostic logs omit recognized speech and assistant replies. If the worker crashes while wake mode is enabled, ARIS retries up to three times; open the Debug Console for the exit code and Python/PortAudio error.
+
 ### One-time offline voice setup
 
 Run `powershell -NoProfile -File scripts/setup_voice.ps1`. It installs pinned Python voice packages into `%LOCALAPPDATA%\ARIS\venv` and downloads the Vosk Indian-English model to `%LOCALAPPDATA%\ARIS\models`. The [official Vosk model page](https://alphacephei.com/vosk/models) lists the small Indian-English model at about 36 MB; it is downloaded once and is not stored in Git.
@@ -52,6 +54,7 @@ src/preferences.cjs Explicit local preference store
 src/audio.cjs       Audio route validation and voice intent parser
 scripts/smoke_audio_devices.py  Device enumeration and ID resolution without opening streams
 scripts/smoke_audio_route.py    SAPI file synthesis with mocked speaker playback
+scripts/smoke_wake_word.py      Offline wake phrase, acknowledgment, and command parsing
 src/renderer/settings.* Clickable audio settings window
 package-lock.json   Pinned npm dependency tree
 voice/             Offline voice worker and pinned Python dependencies

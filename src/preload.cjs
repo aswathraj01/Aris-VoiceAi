@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('aris', Object.freeze({
   onStatus: (callback) => subscribe('aris:status', callback),
   onDetail: (callback) => subscribe('aris:detail', callback),
   onMessage: (callback) => subscribe('aris:message', callback),
+  getDebugLog: () => ipcRenderer.invoke('aris:debug:get-log'),
+  onDebugLog: (callback) => subscribe('aris:debug:entry', callback),
   getAudioSettings: () => ipcRenderer.invoke('aris:audio:get'),
   refreshAudioDevices: () => ipcRenderer.invoke('aris:audio:refresh'),
   saveAudioSettings: (settings) => ipcRenderer.invoke('aris:audio:save', settings),

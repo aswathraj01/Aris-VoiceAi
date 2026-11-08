@@ -13,12 +13,19 @@ const CANCEL_HOTKEY = 'CommandOrControl+Alt+Shift+X';
 const DEFAULT_DETAIL = 'Microphone off. Enable wake word from the tray';
 const MODEL_NAME = process.env.ARIS_OLLAMA_MODEL || 'qwen3:8b';
 const CHAT_URL = process.env.ARIS_OLLAMA_URL || 'http://127.0.0.1:11434/api/chat';
+const DEBUG_MODE = process.argv.includes('--debug') || process.env.ARIS_DEBUG === '1';
+const MAX_RESTART_ATTEMPTS = 3;
 let overlay;
 let audioWindow;
+let debugWindow;
 let tray;
 let voiceWorker;
 let voiceReady = false;
 let wakeWordEnabled = false;
+let voiceStartedAt = 0;
+let restartAttempts = 0;
+let restartTimer;
+const debugEntries = [];
 let currentRequest;
 let status = 'idle';
 let detail = DEFAULT_DETAIL;
@@ -32,6 +39,29 @@ let quitting = false;
 
 function localDataPath(...parts) {
   return path.join(process.env.LOCALAPPDATA || app.getPath('userData'), 'ARIS', ...parts);
+}
+
+function debugLogPath() {
+  return localDataPath('logs', 'aris.log');
+}
+
+function logEvent(level, source, messageText, details = {}) {
+  const entry = { at: new Date().toISOString(), level, source, message: String(messageText || '').slice(0, 500) };
+  if (details && Object.keys(details).length) entry.details = details;
+  debugEntries.push(entry);
+  if (debugEntries.length > 400) debugEntries.splice(0, debugEntries.length - 400);
+  const line = JSON.stringify(entry);
+  try {
+    const filePath = debugLogPath();
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    if (fs.existsSync(filePath) && fs.statSync(filePath).size > 1_500_000) {
+      try { fs.rmSync(filePath + '.1', { force: true }); } catch {}
+      try { fs.renameSync(filePath, filePath + '.1'); } catch {}
+    }
+    fs.appendFileSync(filePath, line + '\n', { encoding: 'utf8', mode: 0o600 });
+  } catch {}
+  if (DEBUG_MODE) (level === 'error' ? console.error : console.log)('[ARIS ' + level.toUpperCase() + '] ' + source + ': ' + entry.message, entry.details || '');
+  if (debugWindow && !debugWindow.isDestroyed()) debugWindow.webContents.send('aris:debug:entry', entry);
 }
 
 function preferencesPath() {
@@ -146,6 +176,7 @@ function stopWorker() {
 
 function handleWorkerMessage(event) {
   if (!event || typeof event.type !== 'string') return;
+  logEvent(event.type === 'error' ? 'error' : 'info', 'voice-worker', event.type, event.type === 'error' ? { detail: String(event.message || '').slice(0, 500) } : {});
   if (event.type === 'ready') {
     voiceReady = true;
     sendWorker('configure_audio', { inputDeviceId: audioInputDeviceId, outputDeviceId: audioOutputDeviceId });
@@ -169,6 +200,15 @@ function handleWorkerMessage(event) {
     if (status === 'paused') return;
     setStatus('idle');
     setDetail(DEFAULT_DETAIL);
+    return;
+  }
+  if (event.type === 'acknowledging') {
+    setStatus('speaking');
+    setDetail('Wake word heard. One moment…');
+    return;
+  }
+  if (event.type === 'warning') {
+    setDetail(String(event.message || 'Voice acknowledgment was unavailable; listening for your request.'));
     return;
   }
   if (event.type === 'listening') {
@@ -219,10 +259,13 @@ function createVoiceWorker() {
   const venvPython = localDataPath('venv', 'Scripts', 'python.exe');
   const python = process.env.ARIS_PYTHON || (fs.existsSync(venvPython) ? venvPython : 'python');
   const modelPath = process.env.ARIS_VOSK_MODEL_DIR || localDataPath('models', 'vosk-model-small-en-in-0.4');
+  voiceStartedAt = Date.now();
+  logEvent('info', 'voice-worker', 'Starting offline voice worker', { python, workerScript, modelPath, debug: DEBUG_MODE });
 
   voiceWorker = spawn(python, [workerScript, modelPath], {
     windowsHide: true,
-    stdio: ['pipe', 'pipe', 'ignore']
+    env: { ...process.env, ARIS_DEBUG: DEBUG_MODE ? '1' : (process.env.ARIS_DEBUG || '') },
+    stdio: ['pipe', 'pipe', 'pipe']
   });
   const child = voiceWorker;
   const lines = readline.createInterface({ input: child.stdout });
@@ -230,33 +273,62 @@ function createVoiceWorker() {
     if (voiceWorker !== child) return;
     try {
       handleWorkerMessage(JSON.parse(line));
-    } catch {
+    } catch (error) {
+      logEvent('error', 'voice-worker', 'Invalid worker protocol message', { error: String(error?.message || error) });
       setStatus('paused');
-      setDetail('Voice service returned an invalid response.');
+      setDetail('Voice service returned an invalid response. Open Debug Console for details.');
     }
   });
-  child.on('error', () => {
+  const errorLines = readline.createInterface({ input: child.stderr });
+  errorLines.on('line', (line) => logEvent('error', 'voice-worker-stderr', line.slice(0, 1500)));
+  child.on('error', (error) => {
     if (voiceWorker !== child) return;
+    logEvent('error', 'voice-worker', 'Failed to launch Python voice worker', { error: String(error?.message || error), python, workerScript });
     voiceWorker = null;
     voiceReady = false;
     wakeWordEnabled = false;
     setStatus('paused');
-    setDetail('Python voice setup is unavailable. Follow docs/DEVELOPMENT.md.');
+    setDetail('Python voice setup could not start: ' + String(error?.message || error).slice(0, 150) + '. Open Debug Console for details.');
+    updateTrayMenu();
   });
-  child.on('exit', (code) => {
+  child.on('exit', (code, signal) => {
     if (voiceWorker !== child) return;
+    const uptimeMs = Date.now() - voiceStartedAt;
+    logEvent(code === 0 ? 'info' : 'error', 'voice-worker', 'Worker process exited', { code, signal, uptimeMs, wasReady: voiceReady, wakeWordEnabled });
     voiceWorker = null;
     voiceReady = false;
-    if (!quitting && status !== 'paused') {
-      wakeWordEnabled = false;
+    if (quitting) return;
+    if (wakeWordEnabled) {
+      if (uptimeMs > 60000) restartAttempts = 0;
+      if (restartAttempts >= MAX_RESTART_ATTEMPTS) {
+        wakeWordEnabled = false;
+        setStatus('paused');
+        setDetail('Voice service stopped repeatedly. Open Debug Console for the error details.');
+        updateTrayMenu();
+        return;
+      }
+      restartAttempts += 1;
+      const delayMs = restartAttempts * 1500;
+      setStatus('thinking');
+      setDetail('Voice service stopped. Restarting in ' + Math.ceil(delayMs / 1000) + 's…');
+      logEvent('warn', 'voice-worker', 'Scheduling worker restart', { attempt: restartAttempts, delayMs, code, signal });
+      clearTimeout(restartTimer);
+      restartTimer = setTimeout(() => {
+        restartTimer = undefined;
+        if (wakeWordEnabled && !quitting) createVoiceWorker();
+      }, delayMs);
+    } else if (status !== 'paused') {
       setStatus('idle');
-      setDetail(code === 0 ? DEFAULT_DETAIL : 'Voice service stopped. Check the offline voice setup.');
+      setDetail(code === 0 ? DEFAULT_DETAIL : 'Voice service stopped (exit ' + code + '). Open Debug Console for details.');
     }
   });
 }
 
 function toggleWakeWord() {
   wakeWordEnabled = !wakeWordEnabled;
+  clearTimeout(restartTimer);
+  restartTimer = undefined;
+  restartAttempts = 0;
   if (wakeWordEnabled) {
     setMessage('');
     setStatus('thinking');
@@ -461,6 +533,7 @@ function updateTrayMenu() {
     { type: 'separator' },
     { label: 'Microphone wake word', type: 'checkbox', checked: wakeWordEnabled, click: toggleWakeWord },
     { label: 'Audio Settings…', click: openAudioSettings },
+    { label: DEBUG_MODE ? 'Debug Console…' : 'Open Debug Log', click: DEBUG_MODE ? showDebugConsole : () => void shell.openPath(debugLogPath()) },
     { label: 'Set up offline voice', click: launchVoiceSetup },
     { label: 'Open saved preferences', click: openPreferencesFile },
     { label: 'Open local action log', click: openActionLog },
@@ -495,6 +568,24 @@ function launchVoiceSetup() {
     windowsHide: false,
     stdio: 'ignore'
   }).on('error', () => setDetail('Could not open the voice setup window.'));
+}
+
+function showDebugConsole() {
+  if (!DEBUG_MODE) { void shell.openPath(debugLogPath()); return; }
+  if (debugWindow && !debugWindow.isDestroyed()) {
+    if (debugWindow.isMinimized()) debugWindow.restore();
+    debugWindow.show();
+    debugWindow.focus();
+    return;
+  }
+  debugWindow = new BrowserWindow({
+    width: 900, height: 620, minWidth: 640, minHeight: 420, show: false,
+    title: 'ARIS Debug Console', backgroundColor: '#071522', autoHideMenuBar: true,
+    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true }
+  });
+  debugWindow.loadFile(path.join(__dirname, 'renderer', 'debug.html'));
+  debugWindow.once('ready-to-show', () => debugWindow && debugWindow.show());
+  debugWindow.on('closed', () => { debugWindow = null; });
 }
 
 function createTray() {
@@ -564,6 +655,7 @@ function registerShortcuts() {
 app.setAppUserModelId(APP_ID);
 app.on('before-quit', () => {
   quitting = true;
+  clearTimeout(restartTimer);
   if (currentRequest) currentRequest.abort();
   if (voiceWorker && voiceWorker.stdin.writable) {
     try { sendWorker('shutdown'); } catch {}
@@ -579,9 +671,11 @@ app.whenReady().then(() => {
 
   ({ startWithWindows, audioInputDeviceId, audioOutputDeviceId, allowVoiceDeviceSwitching } = loadSettings());
   applyStartupSetting();
+  logEvent('info', 'app', 'ARIS started', { version: app.getVersion(), packaged: app.isPackaged, debug: DEBUG_MODE });
   createOverlay();
   createTray();
   registerShortcuts();
+  if (DEBUG_MODE) showDebugConsole();
 
   app.on('second-instance', () => {
     if (overlay && !overlay.isDestroyed()) {
@@ -713,5 +807,9 @@ ipcMain.handle('aris:audio:open-mic-privacy', (event) => {
   return openMicrophonePrivacySettings();
 });
 
+ipcMain.handle('aris:debug:get-log', (event) => {
+  if (!debugWindow || debugWindow.isDestroyed() || event.sender !== debugWindow.webContents) throw new Error('Debug logs are available only in the debug console.');
+  return debugEntries.slice(-400);
+});
 ipcMain.handle('aris:get-status', () => status);
 ipcMain.handle('aris:get-detail', () => detail);

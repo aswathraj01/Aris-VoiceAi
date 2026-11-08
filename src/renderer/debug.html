@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ARIS Debug Console</title>
+    <link rel="stylesheet" href="./debug.css">
+    <script defer src="./debug.js"></script>
+  </head>
+  <body>
+    <header><div><p>ARIS · LOCAL DIAGNOSTICS</p><h1>Debug Console</h1><span>Technical events only. Voice transcripts are not logged.</span></div><div class="actions"><label><input id="follow" type="checkbox" checked> Follow output</label><button id="clear" type="button">Clear view</button></div></header>
+    <main id="entries" role="log" aria-live="polite"></main>
+  </body>
+</html>

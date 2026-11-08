@@ -25,7 +25,7 @@ As of November 8, 2026, `npm audit --omit=dev` reports no runtime dependency vul
 
 ## Provider and data boundary
 
-The desktop shell can be local, while speech recognition or a language model may still send prompts or audio to a provider. Section 2 uses offline Vosk recognition and local Windows SAPI speech output. It sends recognized text only to the configured loopback Ollama endpoint, restricted to localhost/127.0.0.1/::1. It does not send microphone audio to a cloud provider. Microphone capture begins only after the owner enables the tray wake-word toggle. Vosk detects the wake phrase locally; recognized request text goes only to loopback Ollama. Capture closes when the toggle is turned off and pauses during model processing and speech output. Audio and transcripts are not written to disk.
+The desktop shell can be local, while speech recognition or a language model may still send prompts or audio to a provider. Section 2 uses offline Vosk recognition and local Windows SAPI speech output. It sends recognized text only to the configured loopback Ollama endpoint, restricted to localhost/127.0.0.1/::1. It does not send microphone audio to a cloud provider. Microphone capture begins only after the owner enables the tray wake-word toggle. Vosk detects the wake phrase locally; recognized request text goes only to loopback Ollama. Capture closes when the toggle is turned off and pauses during model processing and speech output. Audio and transcripts are not written to disk. Local diagnostic logs are stored under `%LOCALAPPDATA%\ARIS\logs`, capped by rotation, and omit transcripts and assistant replies.
 
 ## Local file search
 

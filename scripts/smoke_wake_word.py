@@ -17,7 +17,9 @@ if not (model_path / "am").is_dir():
 spec = importlib.util.spec_from_file_location("aris_voice_worker", root / "voice" / "worker.py")
 worker = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(worker)
-phrase = "Hey Aris, open Chrome."
+phrase = "Hey Iris, open Chrome."
+if worker.WAKE_ACKNOWLEDGMENT != "Mm-hmm." or worker.wake_tail("Iris") != "" or worker.wake_tail("Hey Iris") != "":
+    raise SystemExit("The wake acknowledgment or wake-only parsing is not configured.")
 with tempfile.TemporaryDirectory(prefix="aris-wake-check-") as folder:
     audio_path = Path(folder) / "wake.wav"
     engine = pyttsx3.init()

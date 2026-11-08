@@ -17,7 +17,9 @@ SetLogLevel(-1)
 SAMPLE_RATE = 16000
 BLOCK_SIZE = 4000
 COMMAND_TIMEOUT = 9.0
-WAKE_GRAMMAR = json.dumps(["aries", "hey aries", "[unk]"])
+WAKE_GRAMMAR = json.dumps(["aries", "hey aries", "iris", "hey iris", "irish", "hey irish", "aris", "hey aris", "[unk]"])
+WAKE_ACKNOWLEDGMENT = "Mm-hmm."
+DEBUG_MODE = os.environ.get("ARIS_DEBUG") == "1"
 MAX_WAKE_BUFFER_BLOCKS = 64
 AUDIO_QUEUE = queue.Queue(maxsize=48)
 COMMAND_QUEUE = queue.Queue()
@@ -175,16 +177,33 @@ def begin_wake_monitoring():
 
 def begin_command_capture():
     global recognizer, mode, command_started_at
+    close_input_stream()
     clear_audio_queue()
     recognizer = make_recognizer()
     command_started_at = time.monotonic()
     mode = "command"
+    open_input_stream()
     send("listening")
+
+
+def acknowledge_and_listen():
+    global mode, recognizer
+    close_input_stream()
+    clear_audio_queue()
+    recognizer = None
+    mode = "awaiting"
+    send("acknowledging")
+    try:
+        speak_text(WAKE_ACKNOWLEDGMENT)
+    except Exception as exc:
+        sys.stderr.write("Wake acknowledgment failed: " + type(exc).__name__ + ": " + str(exc) + "\n")
+        sys.stderr.flush()
+    begin_command_capture()
 
 
 def wake_tail(text):
     words = [word for word in str(text or "").lower().split() if word != "[unk]"]
-    names = {"aris", "eris", "aries"}
+    names = {"aris", "eris", "aries", "iris", "irish"}
     if len(words) >= 2 and words[0] == "hey" and words[1] in names:
         return " ".join(words[2:])
     if words and words[0] in names:
@@ -242,7 +261,7 @@ def process_audio():
             if full_tail:
                 finish_command(full_tail)
             else:
-                begin_command_capture()
+                acknowledge_and_listen()
         elif mode == "command":
             if text:
                 finish_command(text)
@@ -254,7 +273,10 @@ def process_audio():
         recognizer = None
         mode = "idle"
         armed = False
-        send("error", message="Speech recognition stopped after an audio error: " + type(exc).__name__)
+        if DEBUG_MODE:
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+        send("error", message="Speech recognition stopped after an audio error: " + type(exc).__name__ + ": " + str(exc)[:240])
 
 
 def speak_text(text):
@@ -283,7 +305,7 @@ def main():
     global model, speech_engine, armed, mode, selected_input_device_id, selected_output_device_id
     model_path = Path(sys.argv[1]).expanduser() if len(sys.argv) > 1 else Path("")
     if not model_path.is_dir():
-        send("error", message="Offline speech model is missing. Run the voice setup instructions.")
+        send("error", message="Offline speech model is missing at " + str(model_path) + ". Run the voice setup instructions.")
         return 2
 
     try:
@@ -291,7 +313,10 @@ def main():
         speech_engine = pyttsx3.init()
         speech_engine.setProperty("rate", 165)
     except Exception as exc:
-        send("error", message="Voice engine could not start: " + type(exc).__name__)
+        if DEBUG_MODE:
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+        send("error", message="Voice engine could not start: " + type(exc).__name__ + ": " + str(exc)[:240])
         return 2
 
     threading.Thread(target=read_commands, daemon=True).start()
@@ -326,7 +351,10 @@ def main():
                     armed = False
                     mode = "idle"
                     close_input_stream()
-                    send("error", message="Microphone could not start: " + type(exc).__name__)
+                    if DEBUG_MODE:
+                        import traceback
+                        traceback.print_exc(file=sys.stderr)
+                    send("error", message="Microphone could not start: " + type(exc).__name__ + ": " + str(exc)[:240])
         elif action == "disarm":
             armed = False
             close_input_stream()
@@ -345,7 +373,10 @@ def main():
                         begin_wake_monitoring()
                     except Exception as exc:
                         armed = False
-                        send("error", message="Microphone could not restart: " + type(exc).__name__)
+                        if DEBUG_MODE:
+                            import traceback
+                            traceback.print_exc(file=sys.stderr)
+                        send("error", message="Microphone could not restart: " + type(exc).__name__ + ": " + str(exc)[:240])
                 else:
                     send("disarmed")
         elif action == "resume_wake":
@@ -356,7 +387,10 @@ def main():
                     begin_wake_monitoring()
                 except Exception as exc:
                     armed = False
-                    send("error", message="Microphone could not restart: " + type(exc).__name__)
+                    if DEBUG_MODE:
+                        import traceback
+                        traceback.print_exc(file=sys.stderr)
+                    send("error", message="Microphone could not restart: " + type(exc).__name__ + ": " + str(exc)[:240])
         elif action == "speak":
             text = str(command.get("text", "")).strip()
             if text:
@@ -372,7 +406,10 @@ def main():
                         begin_wake_monitoring()
                 except Exception as exc:
                     mode = "idle"
-                    send("error", message="Speech output failed: " + type(exc).__name__)
+                    if DEBUG_MODE:
+                        import traceback
+                        traceback.print_exc(file=sys.stderr)
+                    send("error", message="Speech output failed: " + type(exc).__name__ + ": " + str(exc)[:240])
                     if armed:
                         try:
                             begin_wake_monitoring()
