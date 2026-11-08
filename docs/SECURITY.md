@@ -11,6 +11,10 @@
 - Keep action history local, minimal, and redacted. Provide a way to clear it.
 - Keep local data outside the source repository and exclude it from Git.
 
+## Audio access
+
+Audio Settings enumerates device metadata only; it does not request a stream or record audio. Windows microphone privacy remains controlled by the user in Windows Settings, which ARIS can open on request. ARIS opens the chosen input only during push-to-talk. Output device choices affect ARIS speech only and do not change Windows defaults. Voice requests to switch devices are disabled until enabled in Audio Settings, and are limited to names in the current enumerated device list.
+
 ## Installer and startup
 
 The NSIS installer is per-user. Startup registration runs ARIS under the same Windows account and is controlled by the tray setting. Voice setup is a fixed project script launched only after the user chooses the tray action; it installs pinned Python packages and downloads the Vosk model. The installer does not bundle Python, a language model, user data, or credentials. The unsigned MVP installer may receive an unknown-publisher warning.

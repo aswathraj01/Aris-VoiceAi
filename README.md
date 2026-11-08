@@ -6,7 +6,7 @@ The MVP does not attempt unrestricted computer control or self-modifying behavio
 
 ## Project status
 
-See [the project plan](docs/PROJECT_PLAN.md), [architecture](docs/ARCHITECTURE.md), [security model](docs/SECURITY.md), and [developer guide](docs/DEVELOPMENT.md). The Windows status shell is in place, and Section 2 adds local push-to-talk voice with offline recognition and speech output. Section 3 adds deterministic Chrome/Gmail launch and filename-only search in owner-approved folders. Section 4 adds explicit local preference capture with a tray-accessible review/edit/delete file. Section 5 adds a per-user Windows installer and an opt-in tray action for offline voice setup. See the [developer guide](docs/DEVELOPMENT.md) for one-time voice setup and hotkeys.
+See [the project plan](docs/PROJECT_PLAN.md), [architecture](docs/ARCHITECTURE.md), [security model](docs/SECURITY.md), and [developer guide](docs/DEVELOPMENT.md). The Windows status shell is in place, and Section 2 adds local push-to-talk voice with offline recognition and speech output. Section 3 adds deterministic Chrome/Gmail launch and filename-only search in owner-approved folders. Section 4 adds explicit local preference capture with a tray-accessible review/edit/delete file. Section 5 adds a per-user Windows installer, an opt-in tray action for offline voice setup, and a separate audio settings window to detect/select microphones and speakers and optionally switch ARIS audio routes by voice. See the [developer guide](docs/DEVELOPMENT.md) for one-time voice setup and hotkeys.
 
 ## User rules
 

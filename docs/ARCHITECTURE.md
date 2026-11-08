@@ -13,11 +13,12 @@
 ```text
 Windows desktop shell
   ├─ Status overlay (idle / listening / thinking / working / speaking / paused)
-  ├─ Tray controls and startup preference
+  ├─ Tray controls, startup preference, and clickable audio settings
   └─ Restricted preload bridge
        ↓ typed IPC
 Local assistant coordinator
   ├─ Voice adapter (speech-to-text and text-to-speech)
+  ├─ Audio device enumerator and per-ARIS route selection
   ├─ Conversation/model adapter
   ├─ Policy and confirmation broker
   ├─ Task planner
@@ -30,6 +31,10 @@ The model adapter can be swapped later. Fixed deterministic intents route the fi
 ## Current implementation section
 
 Section 2 adds user-triggered push-to-talk. A Python worker captures microphone audio only after the voice hotkey, Vosk transcribes it locally, and pyttsx3 speaks the result locally. The Electron coordinator sends only the current utterance to the loopback Ollama chat API and speaks the reply. No transcript history is persisted. Section 3 adds fixed local tools that do not use model-generated commands.
+
+## Audio settings and device routing
+
+The tray opens a separate clickable settings window. A small Python query lists available input/output endpoints, the Windows defaults, and host API labels; it never opens a capture or playback stream. The owner can select ARIS-specific input/output routes and optionally allow deterministic voice requests to change those routes. The microphone is still opened only after push-to-talk. Output selection routes synthesized audio to the chosen endpoint without changing the Windows system default.
 
 ## Section 5 packaging boundary
 

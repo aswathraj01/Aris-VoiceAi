@@ -5,6 +5,7 @@ const path = require('node:path');
 const readline = require('node:readline');
 const { approvedRootsFromFile, parseLocalRequest, runLocalRequest } = require('./tools/index.cjs');
 const { applyPreferenceRequest, parsePreferenceRequest, preferenceContext } = require('./preferences.cjs');
+const { DEFAULT_AUDIO_SETTINGS, audioSettingsFromFile, parseAudioRequest, resolveDevice, validateAudioSettings } = require('./audio.cjs');
 
 const APP_ID = 'com.aris.assistant';
 const OVERLAY_HOTKEY = 'CommandOrControl+Alt+Shift+A';
@@ -14,6 +15,7 @@ const DEFAULT_DETAIL = 'Press Ctrl+Alt+Shift+V to speak';
 const MODEL_NAME = process.env.ARIS_OLLAMA_MODEL || 'qwen3:8b';
 const CHAT_URL = process.env.ARIS_OLLAMA_URL || 'http://127.0.0.1:11434/api/chat';
 let overlay;
+let audioWindow;
 let tray;
 let voiceWorker;
 let voiceReady = false;
@@ -26,6 +28,9 @@ let detail = DEFAULT_DETAIL;
 let message = '';
 let showOverlay = true;
 let startWithWindows = true;
+let audioInputDeviceId = DEFAULT_AUDIO_SETTINGS.inputDeviceId;
+let audioOutputDeviceId = DEFAULT_AUDIO_SETTINGS.outputDeviceId;
+let allowVoiceDeviceSwitching = DEFAULT_AUDIO_SETTINGS.allowVoiceDeviceSwitching;
 let quitting = false;
 
 function localDataPath(...parts) {
@@ -79,16 +84,17 @@ function loadSettings() {
     const parsed = JSON.parse(fs.readFileSync(settingsPath(), 'utf8'));
     return {
       startWithWindows: parsed.startWithWindows !== false,
-      voicePaused: parsed.voicePaused === true
+      voicePaused: parsed.voicePaused === true,
+      ...audioSettingsFromFile(settingsPath())
     };
   } catch {
-    return { startWithWindows: true, voicePaused: false };
+    return { startWithWindows: true, voicePaused: false, ...DEFAULT_AUDIO_SETTINGS };
   }
 }
 
 function saveSettings() {
   fs.mkdirSync(app.getPath('userData'), { recursive: true });
-  fs.writeFileSync(settingsPath(), JSON.stringify({ startWithWindows, voicePaused }, null, 2), { mode: 0o600 });
+  fs.writeFileSync(settingsPath(), JSON.stringify({ startWithWindows, voicePaused, audioInputDeviceId, audioOutputDeviceId, allowVoiceDeviceSwitching }, null, 2), { mode: 0o600 });
 }
 
 function applyStartupSetting() {
@@ -147,6 +153,7 @@ function handleWorkerMessage(event) {
   if (!event || typeof event.type !== 'string') return;
   if (event.type === 'ready') {
     voiceReady = true;
+    sendWorker('configure_audio', { inputDeviceId: audioInputDeviceId, outputDeviceId: audioOutputDeviceId });
     if (startRequested && !voicePaused) {
       sendWorker('start');
     } else if (!voicePaused) {
@@ -341,7 +348,8 @@ async function answerLocally(userText) {
   setStatus('thinking');
   const parsedAction = parseLocalRequest(userText);
   const preferenceRequest = parsePreferenceRequest(userText);
-  const localAction = preferenceRequest || parsedAction;
+  const audioRequest = parseAudioRequest(userText);
+  const localAction = preferenceRequest || parsedAction || audioRequest;
   const controller = new AbortController();
   currentRequest = controller;
   try {
@@ -351,10 +359,12 @@ async function answerLocally(userText) {
       const rootsPath = path.join(app.getPath('userData'), 'approved_roots.json');
       const result = preferenceRequest
         ? applyPreferenceRequest(preferencesPath(), preferenceRequest)
-        : await runLocalRequest(parsedAction, { approvedRoots: approvedRootsFromFile(rootsPath) });
+        : audioRequest
+          ? await applyVoiceAudioRequest(audioRequest)
+          : await runLocalRequest(parsedAction, { approvedRoots: approvedRootsFromFile(rootsPath) });
       if (currentRequest !== controller || voicePaused) return;
       currentRequest = null;
-      recordAction(result.action, 'completed');
+      recordAction(result.action, result.ok === false ? 'failed' : 'completed');
       setMessage(result.text);
       setDetail('Speaking…');
       setStatus('speaking');
@@ -420,7 +430,7 @@ async function answerLocally(userText) {
     }
   } catch (error) {
     if (currentRequest !== controller) return;
-    if (localAction) recordAction(preferenceRequest ? preferenceRequest.action : parsedAction.name, 'failed');
+    if (localAction) recordAction(preferenceRequest ? preferenceRequest.action : audioRequest ? 'audio-' + audioRequest.kind : parsedAction.name, 'failed');
     currentRequest = null;
     if (error?.name === 'AbortError' || error?.name === 'TimeoutError') {
       setStatus(voicePaused ? 'paused' : 'idle');
@@ -428,6 +438,9 @@ async function answerLocally(userText) {
     } else if (/non-local model endpoint/.test(String(error?.message))) {
       setStatus('paused');
       setDetail('ARIS only accepts a local Ollama endpoint.');
+    } else if (audioRequest) {
+      setStatus('idle');
+      setDetail('I could not change that audio route. Refresh the device list in Audio Settings and try again. ' + DEFAULT_DETAIL);
     } else if (localAction) {
       setStatus('idle');
       setDetail('I could not complete that local action. Check the Chrome installation or approved folder paths. ' + DEFAULT_DETAIL);
@@ -458,6 +471,7 @@ function updateTrayMenu() {
     { label: 'Status: ' + status, enabled: false },
     { type: 'separator' },
     { label: voicePaused ? 'Resume voice' : 'Pause voice', click: toggleVoicePause },
+    { label: 'Audio Settings…', click: openAudioSettings },
     { label: 'Set up offline voice', click: launchVoiceSetup },
     { label: 'Open saved preferences', click: openPreferencesFile },
     { label: 'Open local action log', click: openActionLog },
@@ -576,7 +590,7 @@ app.whenReady().then(() => {
     return;
   }
 
-  ({ startWithWindows, voicePaused } = loadSettings());
+  ({ startWithWindows, voicePaused, audioInputDeviceId, audioOutputDeviceId, allowVoiceDeviceSwitching } = loadSettings());
   applyStartupSetting();
   createOverlay();
   createTray();
@@ -597,6 +611,119 @@ app.whenReady().then(() => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   stopWorker();
+});
+
+function audioWorkerPaths() {
+  const workerScript = app.isPackaged ? path.join(process.resourcesPath, 'voice', 'worker.py') : path.join(__dirname, 'voice', 'worker.py');
+  const venvPython = localDataPath('venv', 'Scripts', 'python.exe');
+  return {
+    workerScript,
+    python: process.env.ARIS_PYTHON || (fs.existsSync(venvPython) ? venvPython : 'python')
+  };
+}
+
+function discoverAudioDevices() {
+  const { workerScript, python } = audioWorkerPaths();
+  return new Promise((resolve, reject) => {
+    const child = spawn(python, [workerScript, '--list-devices'], { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
+    let output = '';
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill();
+      reject(new Error('Audio device detection timed out.'));
+    }, 15000);
+    child.stdout.on('data', (chunk) => {
+      output += chunk.toString('utf8');
+      if (output.length > 100000) {
+        child.kill();
+        if (!settled) { settled = true; clearTimeout(timer); reject(new Error('Audio device list was too large.')); }
+      }
+    });
+    child.once('error', () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(new Error('Offline audio setup is unavailable. Use “Set up offline voice” in the tray menu.'));
+    });
+    child.once('close', (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (code !== 0) return reject(new Error('Windows audio devices could not be listed. Check microphone privacy and audio drivers.'));
+      try { resolve(JSON.parse(output.trim())); } catch { reject(new Error('Audio device detection returned an invalid response.')); }
+    });
+  });
+}
+
+function isAudioSettingsSender(event) {
+  return Boolean(audioWindow && !audioWindow.isDestroyed() && event.sender === audioWindow.webContents);
+}
+
+function openMicrophonePrivacySettings() {
+  return shell.openExternal('ms-settings:privacy-microphone');
+}
+
+async function applyVoiceAudioRequest(request) {
+  if (!allowVoiceDeviceSwitching) {
+    return { action: 'audio-' + request.kind, ok: false, text: 'Voice device switching is off. Open Audio Settings and enable it first.' };
+  }
+  let devices;
+  try { devices = await discoverAudioDevices(); }
+  catch { return { action: 'audio-' + request.kind, ok: false, text: 'I could not detect audio devices. Open Audio Settings and refresh the device list.' }; }
+  const list = request.kind === 'input' ? devices.inputs : devices.outputs;
+  const selected = resolveDevice(request.query, list);
+  if (selected.error) return { action: 'audio-' + request.kind, ok: false, text: selected.error };
+  if (request.kind === 'input') audioInputDeviceId = selected.id;
+  else audioOutputDeviceId = selected.id;
+  saveSettings();
+  if (voiceWorker && !voiceWorker.killed) sendWorker('configure_audio', { inputDeviceId: audioInputDeviceId, outputDeviceId: audioOutputDeviceId });
+  return { action: 'audio-' + request.kind, text: 'ARIS will use ' + selected.name + ' for ' + (request.kind === 'input' ? 'your next microphone turn.' : 'speech output.') };
+}
+
+function openAudioSettings() {
+  if (audioWindow && !audioWindow.isDestroyed()) {
+    if (audioWindow.isMinimized()) audioWindow.restore();
+    audioWindow.show();
+    audioWindow.focus();
+    return;
+  }
+  audioWindow = new BrowserWindow({
+    width: 560, height: 680, minWidth: 500, minHeight: 600, show: false,
+    title: 'ARIS Audio Settings', backgroundColor: '#071522', autoHideMenuBar: true,
+    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true }
+  });
+  audioWindow.loadFile(path.join(__dirname, 'renderer', 'settings.html'));
+  audioWindow.once('ready-to-show', () => audioWindow && audioWindow.show());
+  audioWindow.on('closed', () => { audioWindow = null; });
+}
+
+ipcMain.handle('aris:audio:get', async (event) => {
+  if (!isAudioSettingsSender(event)) throw new Error('Audio settings are available only in the settings window.');
+  const devices = await discoverAudioDevices();
+  return { settings: { inputDeviceId: audioInputDeviceId, outputDeviceId: audioOutputDeviceId, allowVoiceDeviceSwitching }, devices };
+});
+ipcMain.handle('aris:audio:refresh', async (event) => {
+  if (!isAudioSettingsSender(event)) throw new Error('Audio settings are available only in the settings window.');
+  return discoverAudioDevices();
+});
+ipcMain.handle('aris:audio:save', async (event, requested) => {
+  if (!isAudioSettingsSender(event)) throw new Error('Audio settings are available only in the settings window.');
+  const devices = await discoverAudioDevices();
+  const valid = validateAudioSettings(requested, devices);
+  if (requested?.inputDeviceId && !valid.inputDeviceId) throw new Error('The selected microphone is no longer available. Refresh the list and choose another.');
+  if (requested?.outputDeviceId && !valid.outputDeviceId) throw new Error('The selected speaker is no longer available. Refresh the list and choose another.');
+  audioInputDeviceId = valid.inputDeviceId;
+  audioOutputDeviceId = valid.outputDeviceId;
+  allowVoiceDeviceSwitching = valid.allowVoiceDeviceSwitching;
+  saveSettings();
+  if (voiceWorker && !voiceWorker.killed) sendWorker('configure_audio', { inputDeviceId: audioInputDeviceId, outputDeviceId: audioOutputDeviceId });
+  return { settings: valid, devices };
+});
+ipcMain.handle('aris:audio:open-mic-privacy', (event) => {
+  if (!isAudioSettingsSender(event)) throw new Error('Audio settings are available only in the settings window.');
+  return openMicrophonePrivacySettings();
 });
 
 ipcMain.handle('aris:get-status', () => status);

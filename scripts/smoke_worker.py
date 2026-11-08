@@ -32,12 +32,17 @@ try:
     first = json.loads(lines.get(timeout=60))
     if first.get("type") != "ready":
         raise SystemExit("Voice worker did not report ready: " + str(first))
+    process.stdin.write(json.dumps({"action": "configure_audio", "inputDeviceId": "", "outputDeviceId": ""}) + "\n")
+    process.stdin.flush()
+    configured = json.loads(lines.get(timeout=5))
+    if configured.get("type") != "audio_configured":
+        raise SystemExit("Voice worker did not acknowledge audio routing.")
     process.stdin.write(json.dumps({"action": "shutdown"}) + "\n")
     process.stdin.flush()
     exit_code = process.wait(timeout=20)
     if exit_code != 0:
         raise SystemExit("Voice worker exited with code " + str(exit_code))
-    print("Voice worker loaded the offline model and shut down cleanly (no microphone opened).")
+    print("Voice worker loaded the offline model, accepted audio routing, and shut down cleanly (no microphone opened).")
 finally:
     if process.poll() is None:
         process.kill()

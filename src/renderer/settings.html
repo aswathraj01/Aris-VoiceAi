@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ARIS Audio Settings</title>
+    <link rel="stylesheet" href="./settings.css">
+    <script defer src="./settings.js"></script>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="top">
+        <div class="brandmark" aria-hidden="true">A</div>
+        <div><p class="eyebrow">ARIS ASSISTANT</p><h1>Audio settings</h1><p class="intro">Choose which devices ARIS uses for push-to-talk and spoken replies.</p></div>
+      </header>
+      <div class="notice"><strong>Private by design</strong><span>Device detection lists available endpoints and the Windows defaults. It does not open the microphone or record audio.</span></div>
+      <section class="field">
+        <label for="inputDevice">Microphone input</label>
+        <select id="inputDevice" autocomplete="off"><option>Detecting devices…</option></select>
+        <p id="inputDetected" class="hint">Checking the Windows default microphone…</p>
+      </section>
+      <section class="field">
+        <label for="outputDevice">ARIS speech output</label>
+        <select id="outputDevice" autocomplete="off"><option>Detecting devices…</option></select>
+        <p id="outputDetected" class="hint">Checking the Windows default speaker…</p>
+      </section>
+      <section class="permission">
+        <div><h2>Microphone permission</h2><p>Windows controls microphone privacy. ARIS only opens the selected input during push-to-talk.</p></div>
+        <button id="openPrivacy" class="secondary" type="button">Open Windows privacy settings</button>
+      </section>
+      <label class="toggle">
+        <input id="voiceSwitching" type="checkbox">
+        <span><strong>Allow voice requests to switch ARIS devices</strong><small>When enabled, “switch ARIS microphone to …” and “switch ARIS output to …” apply to the next turn. This changes ARIS only, not Windows defaults.</small></span>
+      </label>
+      <footer>
+        <span id="status" role="status" aria-live="polite">Loading audio devices…</span>
+        <div class="actions"><button id="refresh" class="secondary" type="button">Refresh list</button><button id="save" class="primary" type="button">Save settings</button></div>
+      </footer>
+    </main>
+  </body>
+</html>

@@ -12,5 +12,9 @@ contextBridge.exposeInMainWorld('aris', Object.freeze({
   getDetail: () => ipcRenderer.invoke('aris:get-detail'),
   onStatus: (callback) => subscribe('aris:status', callback),
   onDetail: (callback) => subscribe('aris:detail', callback),
-  onMessage: (callback) => subscribe('aris:message', callback)
+  onMessage: (callback) => subscribe('aris:message', callback),
+  getAudioSettings: () => ipcRenderer.invoke('aris:audio:get'),
+  refreshAudioDevices: () => ipcRenderer.invoke('aris:audio:refresh'),
+  saveAudioSettings: (settings) => ipcRenderer.invoke('aris:audio:save', settings),
+  openMicrophonePrivacySettings: () => ipcRenderer.invoke('aris:audio:open-mic-privacy')
 }));
