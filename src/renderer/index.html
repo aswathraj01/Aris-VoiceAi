@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ARIS status</title>
+    <link rel="stylesheet" href="./styles.css">
+    <script defer src="./status.js"></script>
+  </head>
+  <body>
+    <main class="panel" aria-live="polite" aria-label="ARIS assistant status">
+      <div class="core" aria-hidden="true">
+        <div class="orbit orbit-one"></div>
+        <div class="orbit orbit-two"></div>
+        <div class="core-light"></div>
+      </div>
+      <div class="copy">
+        <div class="brand">ARIS <span class="version">LOCAL</span></div>
+        <div id="status" class="status">Starting…</div>
+        <div id="detail" class="detail">Voice and task tools are not connected yet</div>
+      </div>
+      <div id="pulse" class="pulse" aria-hidden="true"></div>
+    </main>
+  </body>
+</html>
