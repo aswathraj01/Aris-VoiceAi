@@ -19,6 +19,10 @@ The desktop shell can be local, while speech recognition or a language model may
 
 Search is disabled until the owner creates `approved_roots.json` beside the app settings in Electron’s user-data directory (normally `%APPDATA%\aris-desktop`). Example content: `{"roots":["C:\\Users\\<your-name>\\Documents"]}`. Add only folders intended for ARIS to search. UNC paths and drive roots are rejected; symbolic links are skipped. Search is bounded by depth, entries, and returned results. The action log stores only time, action identifier, and outcome; it is capped at 100 entries.
 
+## Local preferences
+
+The only voice write operation is an explicit “remember …” request. “List preferences” reads them. The tray opens `preferences.json` for review, manual editing, and deletion. The store is local to the Windows user profile, capped at 40 entries and 300 characters per entry. Saved text is treated as untrusted personalization and cannot grant capabilities or override safety. Do not save passwords, tokens, or other secrets.
+
 ## User rules
 
 `USER_RULES.md` is reserved for owner-authored behavior preferences. It is intentionally blank. The application must remain safe if the file is empty, malformed, or contains conflicting text; safety defaults come from code and this document.

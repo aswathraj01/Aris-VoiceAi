@@ -27,7 +27,9 @@ Press `Ctrl+Alt+Shift+V` once to start capture and again to stop and get a respo
 
 ARIS recognizes `open Chrome`, `open Gmail`, and `find the file named <words>`. Gmail is only opened in Chrome; the app does not read or send messages. File search checks filenames only, inside folders you explicitly add to `approved_roots.json` in the Electron user-data directory (normally `%APPDATA%\aris-desktop`). Start with an empty file or use `{"roots":["C:\\Users\\<your-name>\\Documents"]}`. Use the tray menu’s “Open local action log” item to inspect `action-log.json`. It records only time, action key, and outcome, up to 100 entries.
 
-Run `npm run test:tools` for the local action tests.
+Say “remember that …” to save a preference and “list preferences” to review them by voice. Use the tray menu’s “Open saved preferences” item to edit or delete entries in `preferences.json`. Preferences are loaded into local model context as untrusted personalization, and should never include secrets.
+
+Run `npm run test:tools` for local action and preference tests.
 
 The app is designed to stay in the notification area when its window is closed. Use the tray menu to show the overlay or exit. The overlay itself is mouse-transparent. The Windows startup preference will be active in the installed build after packaging is configured in Section 5.
 
@@ -38,6 +40,7 @@ src/main.cjs       Electron main process and lifecycle
 src/preload.cjs    Restricted context bridge
 src/renderer/      Status overlay and voice feedback
 src/tools/         Fixed local action parser, allowlisted tools, and tests
+src/preferences.cjs Explicit local preference store
 voice/             Offline voice worker and pinned Python dependencies
 scripts/           Voice setup and offline smoke checks
 docs/              Architecture, security, plan, and development notes

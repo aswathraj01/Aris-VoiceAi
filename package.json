@@ -6,8 +6,8 @@
   "main": "src/main.cjs",
   "scripts": {
     "start": "electron .",
-    "check": "node --check src/main.cjs && node --check src/preload.cjs && node --check src/tools/index.cjs && node --check src/renderer/status.js && python -B -c \"import ast,pathlib; [ast.parse(pathlib.Path(p).read_text(encoding='utf-8'), filename=p) for p in ('voice/worker.py','scripts/smoke_voice.py','scripts/smoke_worker.py')]\"",
-    "test:tools": "node --test src/tools/index.test.cjs"
+    "check": "node --check src/main.cjs && node --check src/preload.cjs && node --check src/tools/index.cjs && node --check src/preferences.cjs && node --check src/renderer/status.js && python -B -c \"import ast,pathlib; [ast.parse(pathlib.Path(p).read_text(encoding='utf-8'), filename=p) for p in ('voice/worker.py','scripts/smoke_voice.py','scripts/smoke_worker.py')]\"",
+    "test:tools": "node --test src/tools/index.test.cjs src/preferences.test.cjs"
   },
   "devDependencies": {
     "electron": "45.2.3"

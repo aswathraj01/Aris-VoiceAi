@@ -31,6 +31,10 @@ The model adapter can be swapped later. Fixed deterministic intents route the fi
 
 Section 2 adds user-triggered push-to-talk. A Python worker captures microphone audio only after the voice hotkey, Vosk transcribes it locally, and pyttsx3 speaks the result locally. The Electron coordinator sends only the current utterance to the loopback Ollama chat API and speaks the reply. No transcript history is persisted. Section 3 adds fixed local tools that do not use model-generated commands.
 
+## Section 4 local preferences
+
+Only a deterministic “remember …” request writes a preference. “List preferences” reads the saved entries. The tray opens `preferences.json` in the system’s default editor so the owner can review, edit, or remove entries. The coordinator reads this file for each model turn and adds the text as untrusted personalization context. Preferences cannot enable tools, override fixed safety rules, or alter code. The store keeps at most 40 entries of up to 300 characters each.
+
 ## Section 3 local tools
 
 The coordinator recognizes only three initial task patterns: open Chrome, open Gmail in Chrome, and search for a filename. The first two launch a fixed executable/URL without a shell. Search traverses only valid local directories from `%APPDATA%\aris-desktop\approved_roots.json` (actual app-data folder varies by Windows profile), skips symlinks and common system/dependency directories, and returns names only. Traversal has depth, entry, and result limits. A local `action-log.json` stores the timestamp, action name, and outcome for the latest 100 actions; it excludes prompts and filenames. Gmail launch opens the site and does not read or send mail.
