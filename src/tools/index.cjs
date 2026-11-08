@@ -8,36 +8,47 @@ const MAX_RESULTS = 15;
 const SKIP_DIRS = new Set(['.git', 'node_modules', 'appdata', 'windows', '$recycle.bin', 'system volume information']);
 
 function parseLocalRequest(input) {
-  const text = String(input || '').trim().replace(/[.!?]+$/, '');
-  const prefix = '(?:(?:hey\\s+(?:aris|eris|iris)[, ]*)?(?:please\\s+)?(?:can you\\s+)?)?';
-  if (new RegExp('^' + prefix + '(?:open|launch|go to|search)\\s+(?:the\\s+)?youtube(?:\\.com)?$', 'i').test(text)) {
-    return { name: 'openYouTube' };
-  }
-  const youtubeSearch = text.match(new RegExp('^' + prefix + '(?:search(?:\\s+on)?|look up|find)\\s+(?:on\\s+)?youtube\\s+(?:(?:for|about)\\s+)?(.+)$', 'i'));
+  let text = String(input || '').trim().replace(/[.!?]+$/, '');
+  text = text.replace(/^(?:hey\s+)?(?:aris|eris|iris)[,\s]*/i, '').replace(/^(?:please\s+|can you\s+|could you\s+)+/i, '').trim();
+  text = text.replace(/^(?:open|launch|go to)\s+google\s*,\s*/i, '');
+
+  const firstVideo = /\b(?:play|open|watch)\s+(?:(?:one|any|a|the first)\s+)?(?:of\s+the\s+)?(?:videos?|results?)(?:\s+on\s+youtube)?\b/i.test(text)
+    || /\b(?:play|open|watch)\s+(?:one|it|that one)\b/i.test(text)
+    || /\b(?:play|open|watch)\s+the\s+first\s+(?:video|result)\b/i.test(text);
+
+  const youtubeSearch = text.match(/\b(?:search|look up|find)\s+(?:on\s+)?youtube(?:\s+(?:for|about))?\s+(.+)$/i)
+    || text.match(/\b(?:search|look up|find)\s+(?:for\s+)?(.+?)\s+on\s+youtube\b/i)
+    || text.match(/\b(?:open|go to)\s+youtube(?:\.com)?[, ]+(?:and\s+)?(?:then\s+)?(?:search|look up|find)\s+(?:on\s+youtube\s+)?(?:for\s+)?(.+)$/i)
+    || text.match(/\b(?:open|launch|start)\s+(?:google\s*,?\s*)?(?:chrome|google chrome)(?:\s+browser)?\s*(?:and|,)\s*(?:then\s+)?(?:search|look up|find)\s+(?:on\s+)?youtube\s+(?:for\s+)?(.+)$/i);
+
   if (youtubeSearch) {
-    const query = youtubeSearch[1].trim().replace(/^['\"]|['\"]$/g, '').slice(0, 160);
-    if (query) return { name: 'searchYouTube', query };
+    let query = youtubeSearch[1].trim().replace(/^['"]|['"]$/g, '');
+    query = query.replace(/\s*(?:,?\s+and\s+then|\s+then|\s+and)\s+(?:play|open|watch)\b[\s\S]*$/i, '').trim().slice(0, 160);
+    if (query) return { name: firstVideo ? 'searchAndPlayYouTube' : 'searchYouTube', query };
   }
-  const firstVideo = text.match(new RegExp('^' + prefix + '(?:open|play)(?:\\s+me)?\\s+(?:the\\s+)?first\\s+(?:video|result|one)(?:\\s+for\\s+(.+))?$', 'i'));
-  const betterVideo = new RegExp('^' + prefix + '(?:find|open|play)\\s+(?:me\\s+)?(?:a\\s+)?better\\s+video$', 'i').test(text);
-  if (firstVideo || betterVideo) {
-    const query = firstVideo && firstVideo[1] ? firstVideo[1].trim().replace(/^['\"]|['\"]$/g, '').slice(0, 160) : '';
+
+  if (firstVideo || /^(?:and\s+)?(?:play|open|watch)\s+(?:one|a|any|the first|one of the)?\s*(?:videos?|results?)?$/i.test(text)) {
+    const queryMatch = text.match(/\b(?:for|about)\s+(.+)$/i);
+    const query = queryMatch ? queryMatch[1].trim().replace(/^['"]|['"]$/g, '').slice(0, 160) : '';
     return { name: 'openFirstYouTubeResult', ...(query ? { query } : {}) };
   }
-  if (new RegExp('^' + prefix + '(?:open|launch|start)\\s+(?:(?:google\\s+)?chrome)(?:\\s+browser)?$', 'i').test(text)) {
-    return { name: 'openChrome' };
+
+  if (/^(?:(?:open|launch|go to)\s+)?(?:youtube(?:\.com)?|search youtube)$/i.test(text)
+      || /\b(?:open|launch|go to)\s+youtube(?:\.com)?\s*$/i.test(text)
+      || /\b(?:open|launch|start)\s+(?:google\s*,?\s*)?(?:chrome|google chrome)(?:\s+browser)?\s*(?:and|,)\s*(?:then\s+)?(?:search|look up|find)\s+(?:on\s+)?youtube\s*$/i.test(text)) {
+    return { name: 'openYouTube' };
   }
-  if (new RegExp('^' + prefix + '(?:open|launch)\\s+(?:(?:my|google)\\s+)?(?:gmail|email|mail)$', 'i').test(text)) {
-    return { name: 'openGmail' };
-  }
-  const fileSearch = text.match(new RegExp('^' + prefix + '(?:find|search for|look for)\\s+(?:(?:the|a)\\s+)?file(?:\\s+(?:named|called))?\\s+(.+)$', 'i'));
+  if (/^(?:open|launch|go to)\s+google$/i.test(text)) return { name: 'openGoogle' };
+  if (/\b(?:open|launch|start)\s+(?:(?:google\s+)?chrome)(?:\s+browser)?\b/i.test(text)) return { name: 'openChrome' };
+  if (/\b(?:open|launch)\s+(?:(?:my|google)\s+)?(?:gmail|email|mail)\b/i.test(text)) return { name: 'openGmail' };
+
+  const fileSearch = text.match(/^(?:find|search for|look for)\s+(?:(?:the|a)\s+)?file(?:\s+(?:named|called))?\s+(.+)$/i);
   if (fileSearch) {
-    const query = fileSearch[1].trim().replace(/^['\"]|['\"]$/g, '').slice(0, 100);
+    const query = fileSearch[1].trim().replace(/^['"]|['"]$/g, '').slice(0, 100);
     if (query) return { name: 'searchFiles', query };
   }
   return null;
 }
-
 function approvedRootsFromFile(filePath) {
   try {
     const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -129,9 +140,30 @@ async function runLocalRequest(request, options = {}) {
     await (options.launchChrome || launchChrome)(null, options);
     return { action: request.name, text: 'Chrome is open.' };
   }
+  if (request.name === 'openGoogle') {
+    await (options.launchChrome || launchChrome)('https://www.google.com/', options);
+    return { action: request.name, text: 'Google is open in Chrome.' };
+  }
   if (request.name === 'openYouTube') {
     await (options.launchChrome || launchChrome)('https://www.youtube.com/', options);
     return { action: request.name, text: 'YouTube is open. Tell me what to search for.' };
+  }
+  if (request.name === 'searchAndPlayYouTube') {
+    const query = String(request.query || '').trim().slice(0, 160);
+    if (!query) return { action: request.name, text: 'Tell me what to search for on YouTube.' };
+    const searchUrl = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(query);
+    try {
+      const fetchImpl = options.fetchImpl || globalThis.fetch;
+      const response = await fetchImpl(searchUrl, { signal: AbortSignal.timeout(12000), headers: { 'User-Agent': 'Mozilla/5.0 ARIS/0.1' } });
+      if (!response.ok) throw new Error('YouTube search returned HTTP ' + response.status);
+      const videoId = extractFirstYouTubeVideoId(await response.text());
+      if (!videoId) throw new Error('No video result found.');
+      await (options.launchChrome || launchChrome)('https://www.youtube.com/watch?v=' + videoId, options);
+      return { action: request.name, text: 'I found a video for ' + query + ' and started playing the top result.' };
+    } catch {
+      await (options.launchChrome || launchChrome)(searchUrl, options);
+      return { action: request.name, text: 'I could not select a video automatically, so I opened the YouTube results for ' + query + '.' };
+    }
   }
   if (request.name === 'searchYouTube') {
     const query = String(request.query || '').trim().slice(0, 160);

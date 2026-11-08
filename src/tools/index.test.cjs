@@ -9,6 +9,9 @@ test('parses only the supported local actions', () => {
   assert.deepEqual(parseLocalRequest('Hey Eris, open Chrome'), { name: 'openChrome' });
   assert.deepEqual(parseLocalRequest('search YouTube for ambient music'), { name: 'searchYouTube', query: 'ambient music' });
   assert.deepEqual(parseLocalRequest('open the first video'), { name: 'openFirstYouTubeResult' });
+  assert.deepEqual(parseLocalRequest('Hey Iris, open YouTube and search for MrBeast Gaming videos and play one of the videos'), { name: 'searchAndPlayYouTube', query: 'MrBeast Gaming videos' });
+  assert.deepEqual(parseLocalRequest('Hey Eris, open Google, open Chrome and search YouTube'), { name: 'openYouTube' });
+  assert.deepEqual(parseLocalRequest('play one of the videos'), { name: 'openFirstYouTubeResult' });
   assert.deepEqual(parseLocalRequest('Can you open Chrome?'), { name: 'openChrome' });
   assert.deepEqual(parseLocalRequest('please open Gmail'), { name: 'openGmail' });
   assert.deepEqual(parseLocalRequest('find the file named invoice'), { name: 'searchFiles', query: 'invoice' });
@@ -59,4 +62,16 @@ test('opens the first YouTube result from the previous search in Chrome', async 
   assert.equal(opened, 'https://www.youtube.com/watch?v=abcdefghijk');
   assert.equal(result.action, 'openFirstYouTubeResult');
   assert.equal(extractFirstYouTubeVideoId('{"videoId":"abcdefghijk"}'), 'abcdefghijk');
+});
+
+
+test('searches YouTube and plays the top result for a single natural voice command', async () => {
+  let opened;
+  const result = await runLocalRequest({ name: 'searchAndPlayYouTube', query: 'MrBeast Gaming videos' }, {
+    fetchImpl: async (url) => { assert.match(url, /search_query=MrBeast%20Gaming%20videos/); return { ok: true, text: async () => '{"videoRenderer":{"videoId":"abcdefghijk"}}' }; },
+    launchChrome: async (url) => { opened = url; }
+  });
+  assert.equal(opened, 'https://www.youtube.com/watch?v=abcdefghijk');
+  assert.equal(result.action, 'searchAndPlayYouTube');
+  assert.match(result.text, /started playing the top result/);
 });

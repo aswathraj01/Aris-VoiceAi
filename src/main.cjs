@@ -449,7 +449,7 @@ async function answerLocally(userText) {
         : audioRequest
           ? await applyVoiceAudioRequest(audioRequest)
           : await runLocalRequest(parsedAction, { approvedRoots: approvedRootsFromFile(rootsPath), lastYouTubeSearchQuery });
-      if (parsedAction?.name === 'searchYouTube' && parsedAction.query) lastYouTubeSearchQuery = parsedAction.query;
+      if (['searchYouTube', 'searchAndPlayYouTube'].includes(parsedAction?.name) && parsedAction.query) lastYouTubeSearchQuery = parsedAction.query;
       if (currentRequest !== controller || quitting) return;
       currentRequest = null;
       recordAction(result.action, result.ok === false ? 'failed' : 'completed');
