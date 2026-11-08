@@ -13,7 +13,7 @@
 
 ## Audio access
 
-Audio Settings enumerates device metadata only; it does not request a stream or record audio. Windows microphone privacy remains controlled by the user in Windows Settings, which ARIS can open on request. ARIS opens the chosen input only during push-to-talk. Output device choices affect ARIS speech only and do not change Windows defaults. Voice requests to switch devices are disabled until enabled in Audio Settings, and are limited to names in the current enumerated device list.
+Audio Settings enumerates device metadata only; it does not request a stream or record audio. Windows microphone privacy remains controlled by the user in Windows Settings, which ARIS can open on request. ARIS opens the chosen input only while the owner has explicitly enabled wake-word listening from the tray; wake listening is off after every app or Windows startup. Output device choices affect ARIS speech only and do not change Windows defaults. Voice requests to switch devices are disabled until enabled in Audio Settings, and are limited to names in the current enumerated device list.
 
 ## Installer and startup
 
@@ -25,7 +25,7 @@ As of November 8, 2026, `npm audit --omit=dev` reports no runtime dependency vul
 
 ## Provider and data boundary
 
-The desktop shell can be local, while speech recognition or a language model may still send prompts or audio to a provider. Section 2 uses offline Vosk recognition and local Windows SAPI speech output. It sends recognized text only to the configured loopback Ollama endpoint, restricted to localhost/127.0.0.1/::1. It does not send microphone audio to a cloud provider. Microphone capture begins only after the user presses the voice hotkey and stops when they press it again, cancel, or pause. Audio and transcripts are not written to disk.
+The desktop shell can be local, while speech recognition or a language model may still send prompts or audio to a provider. Section 2 uses offline Vosk recognition and local Windows SAPI speech output. It sends recognized text only to the configured loopback Ollama endpoint, restricted to localhost/127.0.0.1/::1. It does not send microphone audio to a cloud provider. Microphone capture begins only after the owner enables the tray wake-word toggle. Vosk detects the wake phrase locally; recognized request text goes only to loopback Ollama. Capture closes when the toggle is turned off and pauses during model processing and speech output. Audio and transcripts are not written to disk.
 
 ## Local file search
 

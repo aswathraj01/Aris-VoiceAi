@@ -12,7 +12,7 @@
     <main class="shell">
       <header class="top">
         <div class="brandmark" aria-hidden="true">A</div>
-        <div><p class="eyebrow">ARIS ASSISTANT</p><h1>Audio settings</h1><p class="intro">Choose which devices ARIS uses for push-to-talk and spoken replies.</p></div>
+        <div><p class="eyebrow">ARIS ASSISTANT</p><h1>Audio settings</h1><p class="intro">Choose which devices ARIS uses for wake-word listening and spoken replies.</p></div>
       </header>
       <div class="notice"><strong>Private by design</strong><span>Device detection lists available endpoints and the Windows defaults. It does not open the microphone or record audio.</span></div>
       <section class="field">
@@ -26,7 +26,7 @@
         <p id="outputDetected" class="hint">Checking the Windows default speaker…</p>
       </section>
       <section class="permission">
-        <div><h2>Microphone permission</h2><p>Windows controls microphone privacy. ARIS only opens the selected input during push-to-talk.</p></div>
+        <div><h2>Microphone permission</h2><p>Windows controls microphone privacy. ARIS opens the selected input only while wake-word listening is enabled from the tray.</p></div>
         <button id="openPrivacy" class="secondary" type="button">Open Windows privacy settings</button>
       </section>
       <label class="toggle">

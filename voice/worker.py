@@ -2,8 +2,9 @@ import json
 import os
 import queue
 import sys
-import threading
 import tempfile
+import threading
+import time
 import wave
 from pathlib import Path
 
@@ -15,16 +16,23 @@ from vosk import KaldiRecognizer, Model, SetLogLevel
 SetLogLevel(-1)
 SAMPLE_RATE = 16000
 BLOCK_SIZE = 4000
+COMMAND_TIMEOUT = 9.0
+WAKE_GRAMMAR = json.dumps(["aries", "hey aries", "[unk]"])
+MAX_WAKE_BUFFER_BLOCKS = 64
 AUDIO_QUEUE = queue.Queue(maxsize=48)
 COMMAND_QUEUE = queue.Queue()
 model = None
 recognizer = None
 stream = None
 is_listening = False
+mode = "idle"
+armed = False
+command_started_at = 0.0
 completed_segments = []
 speech_engine = None
 selected_input_device_id = ""
 selected_output_device_id = ""
+wake_audio_buffer = []
 
 
 def send(kind, **values):
@@ -79,18 +87,17 @@ def enumerate_devices():
 def resolve_device_id(device_id, direction):
     if not device_id:
         return None
-    devices = enumerate_devices()[direction]
-    for device in devices:
-        if device["id"] == device_id:
-            raw_devices = sd.query_devices()
-            host_apis = sd.query_hostapis()
-            for index, raw in enumerate(raw_devices):
-                host_api = host_apis[int(raw["hostapi"])]["name"]
-                if raw["name"] == device["name"] and host_api == device["hostApi"]:
-                    # IDs include duplicate ordinal; compare by enumeration order.
-                    count = sum(1 for prior in raw_devices[:index] if prior["name"] == raw["name"] and host_apis[int(prior["hostapi"])]["name"] == host_api)
-                    if device["id"].endswith("#" + str(count)):
-                        return index
+    for device in enumerate_devices()[direction]:
+        if device["id"] != device_id:
+            continue
+        raw_devices = sd.query_devices()
+        host_apis = sd.query_hostapis()
+        for index, raw in enumerate(raw_devices):
+            host_api = host_apis[int(raw["hostapi"])]["name"]
+            if raw["name"] == device["name"] and host_api == device["hostApi"]:
+                count = sum(1 for prior in raw_devices[:index] if prior["name"] == raw["name"] and host_apis[int(prior["hostapi"])]["name"] == host_api)
+                if device_id.endswith("#" + str(count)):
+                    return index
     raise RuntimeError("The selected audio device is no longer available.")
 
 
@@ -105,7 +112,6 @@ def list_devices_cli():
 
 def audio_callback(indata, frames, timing, status):
     if status:
-        # Device status details are intentionally not logged.
         pass
     data = bytes(indata)
     try:
@@ -118,62 +124,163 @@ def audio_callback(indata, frames, timing, status):
             pass
 
 
-def begin_capture():
-    global recognizer, stream, is_listening, completed_segments
+def make_recognizer(wake=False):
+    instance = KaldiRecognizer(model, SAMPLE_RATE, WAKE_GRAMMAR) if wake else KaldiRecognizer(model, SAMPLE_RATE)
+    instance.SetWords(False)
+    return instance
+
+
+def clear_audio_queue():
     while not AUDIO_QUEUE.empty():
         try:
             AUDIO_QUEUE.get_nowait()
         except queue.Empty:
             break
-    completed_segments = []
-    recognizer = KaldiRecognizer(model, SAMPLE_RATE)
-    recognizer.SetWords(False)
+
+
+def close_input_stream():
+    global stream, is_listening
+    if stream is not None:
+        try:
+            stream.stop()
+        finally:
+            stream.close()
+            stream = None
+    is_listening = False
+
+
+def open_input_stream():
+    global stream, is_listening
+    device = resolve_device_id(selected_input_device_id, "inputs")
     stream = sd.RawInputStream(
-        samplerate=SAMPLE_RATE,
-        blocksize=BLOCK_SIZE,
-        device=resolve_device_id(selected_input_device_id, "inputs"),
-        channels=1,
-        dtype="int16",
-        callback=audio_callback,
+        samplerate=SAMPLE_RATE, blocksize=BLOCK_SIZE, device=device, channels=1,
+        dtype="int16", callback=audio_callback,
     )
     stream.start()
     is_listening = True
+
+
+def begin_wake_monitoring():
+    global recognizer, mode, wake_audio_buffer
+    if not armed or mode == "awaiting":
+        return
+    close_input_stream()
+    clear_audio_queue()
+    wake_audio_buffer = []
+    recognizer = make_recognizer(wake=True)
+    open_input_stream()
+    mode = "wake"
+    send("armed")
+
+
+def begin_command_capture():
+    global recognizer, mode, command_started_at
+    clear_audio_queue()
+    recognizer = make_recognizer()
+    command_started_at = time.monotonic()
+    mode = "command"
     send("listening")
 
 
-def finish_capture():
-    global stream, is_listening, recognizer, completed_segments
-    if stream is not None:
-        stream.stop()
-        stream.close()
-        stream = None
-    is_listening = False
-    if recognizer is not None:
-        try:
-            while True:
-                try:
-                    audio = AUDIO_QUEUE.get_nowait()
-                except queue.Empty:
-                    break
-                if recognizer.AcceptWaveform(audio):
-                    result = json.loads(recognizer.Result())
-                    segment = result.get("text", "").strip()
-                    if segment:
-                        completed_segments.append(segment)
-            result = json.loads(recognizer.FinalResult())
-            final_text = result.get("text", "").strip()
-            if final_text:
-                completed_segments.append(final_text)
-        except (json.JSONDecodeError, RuntimeError):
-            pass
-    text = " ".join(part for part in completed_segments if part).strip()
+def wake_tail(text):
+    words = [word for word in str(text or "").lower().split() if word != "[unk]"]
+    names = {"aris", "eris", "aries"}
+    if len(words) >= 2 and words[0] == "hey" and words[1] in names:
+        return " ".join(words[2:])
+    if words and words[0] in names:
+        return " ".join(words[1:])
+    if len(words) >= 2 and words[0] == "here" and words[1] == "is":
+        return " ".join(words[2:])
+    if len(words) >= 2 and words[0] == "here's" and words[1] in names:
+        return " ".join(words[2:])
+    return None
+
+
+def transcribe_audio(audio_blocks):
+    command_recognizer = make_recognizer()
+    for block in audio_blocks:
+        command_recognizer.AcceptWaveform(block)
+    result = json.loads(command_recognizer.FinalResult())
+    return result.get("text", "").strip()
+
+
+def finish_command(text):
+    global recognizer, mode
+    close_input_stream()
+    clear_audio_queue()
     recognizer = None
-    completed_segments = []
-    send("transcript", text=text)
+    mode = "awaiting"
+    send("transcript", text=str(text or "").strip())
+
+
+def process_audio():
+    global recognizer, wake_audio_buffer, mode, armed
+    try:
+        audio = AUDIO_QUEUE.get_nowait()
+    except queue.Empty:
+        if mode == "command" and time.monotonic() - command_started_at > COMMAND_TIMEOUT:
+            finish_command("")
+        return
+
+    try:
+        if mode == "wake":
+            wake_audio_buffer.append(audio)
+            if len(wake_audio_buffer) > MAX_WAKE_BUFFER_BLOCKS:
+                del wake_audio_buffer[0]
+        if not recognizer.AcceptWaveform(audio):
+            return
+        result = json.loads(recognizer.Result())
+        text = result.get("text", "").strip()
+        if mode == "wake":
+            tail = wake_tail(text)
+            if tail is None:
+                wake_audio_buffer = []
+                return
+            full_text = transcribe_audio(wake_audio_buffer)
+            full_tail = wake_tail(full_text)
+            wake_audio_buffer = []
+            if full_tail:
+                finish_command(full_tail)
+            else:
+                begin_command_capture()
+        elif mode == "command":
+            if text:
+                finish_command(text)
+            elif time.monotonic() - command_started_at > COMMAND_TIMEOUT:
+                finish_command("")
+    except Exception as exc:
+        close_input_stream()
+        clear_audio_queue()
+        recognizer = None
+        mode = "idle"
+        armed = False
+        send("error", message="Speech recognition stopped after an audio error: " + type(exc).__name__)
+
+
+def speak_text(text):
+    if not selected_output_device_id:
+        speech_engine.say(text)
+        speech_engine.runAndWait()
+        return
+
+    output_device = resolve_device_id(selected_output_device_id, "outputs")
+    with tempfile.TemporaryDirectory(prefix="aris-speech-") as temp_dir:
+        wav_path = Path(temp_dir) / "speech.wav"
+        speech_engine.save_to_file(text, str(wav_path))
+        speech_engine.runAndWait()
+        with wave.open(str(wav_path), "rb") as audio:
+            if audio.getcomptype() != "NONE" or audio.getsampwidth() != 2:
+                raise RuntimeError("Speech engine produced an unsupported audio format.")
+            channels = audio.getnchannels()
+            sample_rate = audio.getframerate()
+            samples = np.frombuffer(audio.readframes(audio.getnframes()), dtype=np.int16)
+            if channels > 1:
+                samples = samples.reshape((-1, channels))
+            sd.play(samples, samplerate=sample_rate, device=output_device, blocking=True)
 
 
 def main():
-    global model, speech_engine, is_listening, selected_input_device_id, selected_output_device_id
+    global model, speech_engine, armed, mode, selected_input_device_id, selected_output_device_id
     model_path = Path(sys.argv[1]).expanduser() if len(sys.argv) > 1 else Path("")
     if not model_path.is_dir():
         send("error", message="Offline speech model is missing. Run the voice setup instructions.")
@@ -197,80 +304,90 @@ def main():
         except queue.Empty:
             pass
 
-        if is_listening and recognizer is not None:
-            try:
-                audio = AUDIO_QUEUE.get_nowait()
-                if recognizer.AcceptWaveform(audio):
-                    result = json.loads(recognizer.Result())
-                    segment = result.get("text", "").strip()
-                    if segment:
-                        completed_segments.append(segment)
-            except queue.Empty:
-                pass
-            except (json.JSONDecodeError, RuntimeError):
-                send("error", message="Speech recognition encountered an audio error.")
-
+        if is_listening and mode in {"wake", "command"}:
+            process_audio()
         if command is None:
             continue
+
         action = command.get("action")
-        if action == "start" and not is_listening:
-            try:
-                begin_capture()
-            except Exception as exc:
-                is_listening = False
-                send("error", message=(str(exc) if isinstance(exc, RuntimeError) else "Microphone could not start: " + type(exc).__name__))
-        elif action == "stop" and is_listening:
-            try:
-                finish_capture()
-            except Exception as exc:
-                is_listening = False
-                send("error", message="Microphone could not stop: " + type(exc).__name__)
-        elif action == "configure_audio":
+        if action == "configure_audio":
+            previous_input = selected_input_device_id
             selected_input_device_id = str(command.get("inputDeviceId") or "")[:500]
             selected_output_device_id = str(command.get("outputDeviceId") or "")[:500]
             send("audio_configured")
+            if mode == "wake" and previous_input != selected_input_device_id:
+                begin_wake_monitoring()
+        elif action == "arm_wake":
+            armed = True
+            if mode != "awaiting":
+                try:
+                    begin_wake_monitoring()
+                except Exception as exc:
+                    armed = False
+                    mode = "idle"
+                    close_input_stream()
+                    send("error", message="Microphone could not start: " + type(exc).__name__)
+        elif action == "disarm":
+            armed = False
+            close_input_stream()
+            clear_audio_queue()
+            recognizer = None
+            mode = "idle"
+            send("disarmed")
+        elif action == "cancel_command":
+            if mode == "command":
+                close_input_stream()
+                clear_audio_queue()
+                recognizer = None
+                mode = "idle"
+                if armed:
+                    try:
+                        begin_wake_monitoring()
+                    except Exception as exc:
+                        armed = False
+                        send("error", message="Microphone could not restart: " + type(exc).__name__)
+                else:
+                    send("disarmed")
+        elif action == "resume_wake":
+            if armed and mode == "awaiting":
+                mode = "idle"
+            if armed and mode == "idle":
+                try:
+                    begin_wake_monitoring()
+                except Exception as exc:
+                    armed = False
+                    send("error", message="Microphone could not restart: " + type(exc).__name__)
         elif action == "speak":
             text = str(command.get("text", "")).strip()
             if text:
+                close_input_stream()
+                clear_audio_queue()
+                recognizer = None
+                mode = "awaiting" if armed else "idle"
                 try:
                     speak_text(text[:1600])
                     send("spoken")
+                    if armed:
+                        mode = "idle"
+                        begin_wake_monitoring()
                 except Exception as exc:
+                    mode = "idle"
                     send("error", message="Speech output failed: " + type(exc).__name__)
+                    if armed:
+                        try:
+                            begin_wake_monitoring()
+                        except Exception:
+                            armed = False
         elif action == "shutdown":
-            if is_listening:
-                try:
-                    finish_capture()
-                except Exception:
-                    pass
+            armed = False
+            close_input_stream()
+            clear_audio_queue()
             if speech_engine is not None:
                 try:
                     speech_engine.stop()
                 except Exception:
                     pass
             return 0
-
-
-def speak_text(text):
-    if not selected_output_device_id:
-        speech_engine.say(text)
-        speech_engine.runAndWait()
-        return
-
-    output_device = resolve_device_id(selected_output_device_id, "outputs")
-    with tempfile.TemporaryDirectory(prefix="aris-speech-") as temp_dir:
-        wav_path = Path(temp_dir) / "speech.wav"
-        speech_engine.save_to_file(text, str(wav_path))
-        speech_engine.runAndWait()
-        with wave.open(str(wav_path), "rb") as audio:
-            if audio.getcomptype() != "NONE" or audio.getsampwidth() != 2:
-                raise RuntimeError("Speech engine produced an unsupported audio format.")
-            channels = audio.getnchannels()
-            sample_rate = audio.getframerate()
-            samples = np.frombuffer(audio.readframes(audio.getnframes()), dtype=np.int16)
-            if channels > 1:
-                samples = samples.reshape((-1, channels))
-            sd.play(samples, samplerate=sample_rate, device=output_device, blocking=True)
 
 
 if __name__ == "__main__":

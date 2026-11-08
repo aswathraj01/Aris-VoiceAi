@@ -71,7 +71,7 @@ saveButton.addEventListener('click', async () => {
       allowVoiceDeviceSwitching: allowVoiceSwitching.checked
     });
     render(result);
-    status.textContent = 'Saved. The microphone choice applies to the next push-to-talk turn.';
+    status.textContent = 'Saved. The microphone choice applies to wake-word listening.';
   } catch (error) {
     status.textContent = String(error?.message || 'Could not save audio settings.');
   } finally { setBusy(false); }

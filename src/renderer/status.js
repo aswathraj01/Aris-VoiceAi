@@ -1,10 +1,11 @@
 const labels = {
-  idle: ['Ready', 'Press Ctrl+Alt+Shift+V to speak'],
-  listening: ['Listening', 'Press Ctrl+Alt+Shift+V again to finish'],
+  idle: ['Microphone off', 'Enable “Microphone wake word” from the tray'],
+  armed: ['Wake word on', 'Say “ARIS” or “Hey ARIS” to start a request'],
+  listening: ['Listening', 'Wake word heard. Say your request.'],
   thinking: ['Thinking', 'Processing on this computer'],
   working: ['Working', 'Running an approved task'],
   speaking: ['Speaking', 'Responding to you'],
-  paused: ['Paused', 'Voice is paused']
+  paused: ['Paused', 'Voice service needs attention']
 };
 
 const statusNode = document.getElementById('status');

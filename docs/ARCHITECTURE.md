@@ -30,11 +30,11 @@ The model adapter can be swapped later. Fixed deterministic intents route the fi
 
 ## Current implementation section
 
-Section 2 adds user-triggered push-to-talk. A Python worker captures microphone audio only after the voice hotkey, Vosk transcribes it locally, and pyttsx3 speaks the result locally. The Electron coordinator sends only the current utterance to the loopback Ollama chat API and speaks the reply. No transcript history is persisted. Section 3 adds fixed local tools that do not use model-generated commands.
+Section 2 adds tray-controlled offline wake-word listening. Listening starts only after the owner enables “Microphone wake word” in the Windows notification-area tray menu; every app launch begins disarmed. The Python worker uses a constrained Vosk grammar to detect “ARIS” or “Hey ARIS” locally, then transcribes the request locally. It closes the input stream while a request is processed and while pyttsx3 speaks. The Electron coordinator sends only the current transcript to the loopback Ollama chat API. No transcript history is persisted. Section 3 adds fixed local tools that do not use model-generated commands.
 
 ## Audio settings and device routing
 
-The tray opens a separate clickable settings window. A small Python query lists available input/output endpoints, the Windows defaults, and host API labels; it never opens a capture or playback stream. The owner can select ARIS-specific input/output routes and optionally allow deterministic voice requests to change those routes. The microphone is still opened only after push-to-talk. Output selection routes synthesized audio to the chosen endpoint without changing the Windows system default.
+The tray opens a separate clickable settings window. A small Python query lists available input/output endpoints, the Windows defaults, and host API labels; it never opens a capture or playback stream. The owner can select ARIS-specific input/output routes and optionally allow deterministic voice requests to change those routes. The microphone stream is opened only while the owner has explicitly enabled wake-word listening, and closes when they turn it off. Output selection routes synthesized audio to the chosen endpoint without changing the Windows system default.
 
 ## Section 5 packaging boundary
 

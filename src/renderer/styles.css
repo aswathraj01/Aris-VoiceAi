@@ -83,6 +83,8 @@ html, body {
 .detail { margin-top: 2px; font-size: 9px; color: #a7c4cf; white-space: nowrap; }
 .pulse { width: 7px; height: 7px; margin-left: auto; border-radius: 50%; background: #63e3b0; box-shadow: 0 0 11px rgba(99, 227, 176, .9); }
 
+.panel[data-state="armed"] { border-color: rgba(90, 220, 255, .58); }
+.panel[data-state="armed"] .pulse { background: #70dcf1; box-shadow: 0 0 11px rgba(90, 220, 255, .85); animation: breathe 2.8s ease-in-out infinite; }
 .panel[data-state="listening"] { border-color: rgba(67, 229, 196, .62); box-shadow: 0 0 25px rgba(39, 214, 189, .16); }
 .panel[data-state="listening"] .core-light { background: #62f5cc; box-shadow: 0 0 10px #62f5cc, 0 0 24px rgba(40, 239, 190, .88); animation-duration: .75s; }
 .panel[data-state="thinking"], .panel[data-state="working"] { border-color: rgba(77, 177, 255, .62); }

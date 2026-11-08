@@ -9,9 +9,8 @@ const { DEFAULT_AUDIO_SETTINGS, audioSettingsFromFile, parseAudioRequest, resolv
 
 const APP_ID = 'com.aris.assistant';
 const OVERLAY_HOTKEY = 'CommandOrControl+Alt+Shift+A';
-const VOICE_HOTKEY = 'CommandOrControl+Alt+Shift+V';
 const CANCEL_HOTKEY = 'CommandOrControl+Alt+Shift+X';
-const DEFAULT_DETAIL = 'Press Ctrl+Alt+Shift+V to speak';
+const DEFAULT_DETAIL = 'Microphone off. Enable wake word from the tray';
 const MODEL_NAME = process.env.ARIS_OLLAMA_MODEL || 'qwen3:8b';
 const CHAT_URL = process.env.ARIS_OLLAMA_URL || 'http://127.0.0.1:11434/api/chat';
 let overlay;
@@ -19,9 +18,7 @@ let audioWindow;
 let tray;
 let voiceWorker;
 let voiceReady = false;
-let startRequested = false;
-let discardNextTranscript = false;
-let voicePaused = false;
+let wakeWordEnabled = false;
 let currentRequest;
 let status = 'idle';
 let detail = DEFAULT_DETAIL;
@@ -84,17 +81,16 @@ function loadSettings() {
     const parsed = JSON.parse(fs.readFileSync(settingsPath(), 'utf8'));
     return {
       startWithWindows: parsed.startWithWindows !== false,
-      voicePaused: parsed.voicePaused === true,
       ...audioSettingsFromFile(settingsPath())
     };
   } catch {
-    return { startWithWindows: true, voicePaused: false, ...DEFAULT_AUDIO_SETTINGS };
+    return { startWithWindows: true, ...DEFAULT_AUDIO_SETTINGS };
   }
 }
 
 function saveSettings() {
   fs.mkdirSync(app.getPath('userData'), { recursive: true });
-  fs.writeFileSync(settingsPath(), JSON.stringify({ startWithWindows, voicePaused, audioInputDeviceId, audioOutputDeviceId, allowVoiceDeviceSwitching }, null, 2), { mode: 0o600 });
+  fs.writeFileSync(settingsPath(), JSON.stringify({ startWithWindows, audioInputDeviceId, audioOutputDeviceId, allowVoiceDeviceSwitching }, null, 2), { mode: 0o600 });
 }
 
 function applyStartupSetting() {
@@ -129,7 +125,7 @@ function setMessage(value) {
 }
 
 function setStatus(nextStatus) {
-  const allowed = new Set(['idle', 'listening', 'thinking', 'working', 'speaking', 'paused']);
+  const allowed = new Set(['idle', 'armed', 'listening', 'thinking', 'working', 'speaking', 'paused']);
   if (!allowed.has(nextStatus)) return;
   status = nextStatus;
   publish('aris:status', status);
@@ -143,7 +139,6 @@ function sendWorker(action, values = {}) {
 }
 
 function stopWorker() {
-  startRequested = false;
   voiceReady = false;
   if (voiceWorker && !voiceWorker.killed) voiceWorker.kill();
   voiceWorker = null;
@@ -154,30 +149,46 @@ function handleWorkerMessage(event) {
   if (event.type === 'ready') {
     voiceReady = true;
     sendWorker('configure_audio', { inputDeviceId: audioInputDeviceId, outputDeviceId: audioOutputDeviceId });
-    if (startRequested && !voicePaused) {
-      sendWorker('start');
-    } else if (!voicePaused) {
+    if (wakeWordEnabled) sendWorker('arm_wake');
+    else {
       setStatus('idle');
       setDetail(DEFAULT_DETAIL);
     }
     return;
   }
+  if (event.type === 'armed') {
+    if (!wakeWordEnabled) {
+      sendWorker('disarm');
+      return;
+    }
+    setStatus('armed');
+    setDetail('Microphone on. Say “ARIS” or “Hey ARIS” to wake me.');
+    return;
+  }
+  if (event.type === 'disarmed') {
+    if (status === 'paused') return;
+    setStatus('idle');
+    setDetail(DEFAULT_DETAIL);
+    return;
+  }
   if (event.type === 'listening') {
     setMessage('');
-    setDetail('Press Ctrl+Alt+Shift+V again to finish');
+    setDetail('Wake word heard. Listening for your request…');
     setStatus('listening');
     return;
   }
   if (event.type === 'transcript') {
-    startRequested = false;
-    if (voicePaused || quitting || discardNextTranscript) {
-      discardNextTranscript = false;
-      return;
-    }
+    if (quitting) return;
     const text = typeof event.text === 'string' ? event.text.trim() : '';
     if (!text) {
-      setStatus('idle');
-      setDetail('I did not catch that. ' + DEFAULT_DETAIL);
+      if (wakeWordEnabled) {
+        setStatus('armed');
+        setDetail('I did not catch that. Say “ARIS” to try again.');
+        sendWorker('resume_wake');
+      } else {
+        setStatus('idle');
+        setDetail(DEFAULT_DETAIL);
+      }
       return;
     }
     setMessage('“' + text.slice(0, 180) + (text.length > 180 ? '…”' : '”'));
@@ -185,16 +196,18 @@ function handleWorkerMessage(event) {
     return;
   }
   if (event.type === 'spoken') {
-    if (!voicePaused && !currentRequest) {
-      setStatus('idle');
-      setDetail(DEFAULT_DETAIL);
+    if (wakeWordEnabled && !currentRequest) {
+      setStatus('armed');
+      setDetail('Waiting for the wake word…');
     }
     return;
   }
   if (event.type === 'error') {
-    startRequested = false;
+    sendWorker('disarm');
+    wakeWordEnabled = false;
     setStatus('paused');
     setDetail(String(event.message || 'Voice service failed.'));
+    updateTrayMenu();
   }
 }
 
@@ -226,7 +239,7 @@ function createVoiceWorker() {
     if (voiceWorker !== child) return;
     voiceWorker = null;
     voiceReady = false;
-    startRequested = false;
+    wakeWordEnabled = false;
     setStatus('paused');
     setDetail('Python voice setup is unavailable. Follow docs/DEVELOPMENT.md.');
   });
@@ -234,80 +247,51 @@ function createVoiceWorker() {
     if (voiceWorker !== child) return;
     voiceWorker = null;
     voiceReady = false;
-    startRequested = false;
     if (!quitting && status !== 'paused') {
+      wakeWordEnabled = false;
       setStatus('idle');
       setDetail(code === 0 ? DEFAULT_DETAIL : 'Voice service stopped. Check the offline voice setup.');
     }
   });
 }
 
-function startListening() {
-  if (voicePaused || quitting) return;
-  discardNextTranscript = false;
-  setMessage('');
-  setStatus('thinking');
-  setDetail('Starting offline speech recognition…');
-  startRequested = true;
-  createVoiceWorker();
-  if (voiceReady) sendWorker('start');
-}
-
-function stopListening() {
-  if (!voiceWorker || status !== 'listening') return;
-  setStatus('thinking');
-  setDetail('Working on that…');
-  sendWorker('stop');
-}
-
-function cancelCurrentTurn() {
-  const hadModelRequest = Boolean(currentRequest);
-  if (currentRequest) {
-    currentRequest.abort();
-    currentRequest = null;
-  }
-  if (voiceWorker && status === 'speaking') stopWorker();
-  if (status === 'listening') {
-    discardNextTranscript = true;
-    sendWorker('stop');
-  } else if (status === 'thinking' && !hadModelRequest) {
-    discardNextTranscript = true;
-    if (startRequested && !voiceReady) stopWorker();
-  }
-  setMessage('');
-  setStatus(voicePaused ? 'paused' : 'idle');
-  setDetail(voicePaused ? 'Voice is paused' : 'Cancelled. ' + DEFAULT_DETAIL);
-}
-
-function toggleVoice() {
-  if (voicePaused) return;
-  if (status === 'listening') {
-    stopListening();
-  } else if (status === 'thinking' || status === 'speaking') {
-    cancelCurrentTurn();
+function toggleWakeWord() {
+  wakeWordEnabled = !wakeWordEnabled;
+  if (wakeWordEnabled) {
+    setMessage('');
+    setStatus('thinking');
+    setDetail('Starting the offline wake word listener…');
+    createVoiceWorker();
+    if (voiceReady) sendWorker('arm_wake');
   } else {
-    startListening();
-  }
-}
-
-function toggleVoicePause() {
-  voicePaused = !voicePaused;
-  saveSettings();
-  if (voicePaused) {
-    if (voiceWorker && status === 'speaking') stopWorker();
-    if (currentRequest) {
-      currentRequest.abort();
-      currentRequest = null;
-    }
-    startRequested = false;
-    if (status === 'listening') sendWorker('stop');
-    setStatus('paused');
-    setDetail('Voice is paused');
-  } else {
+    sendWorker('disarm');
     setStatus('idle');
     setDetail(DEFAULT_DETAIL);
   }
   updateTrayMenu();
+}
+
+function cancelCurrentTurn() {
+  if (currentRequest) {
+    currentRequest.abort();
+    currentRequest = null;
+  }
+  if (status === 'listening') {
+    sendWorker('cancel_command');
+  } else if (status === 'speaking' && voiceWorker) {
+    stopWorker();
+    if (wakeWordEnabled) createVoiceWorker();
+  } else if (wakeWordEnabled && voiceWorker) {
+    sendWorker('resume_wake');
+  }
+  setMessage('');
+  if (wakeWordEnabled) {
+    setStatus('thinking');
+    setDetail('Cancelled. Returning to the wake word…');
+  } else {
+    setStatus('idle');
+    setDetail(DEFAULT_DETAIL);
+  }
 }
 
 async function ensureLocalOllama(signal) {
@@ -344,7 +328,6 @@ async function ensureLocalOllama(signal) {
 }
 
 async function answerLocally(userText) {
-  if (voicePaused) return;
   setStatus('thinking');
   const parsedAction = parseLocalRequest(userText);
   const preferenceRequest = parsePreferenceRequest(userText);
@@ -362,7 +345,7 @@ async function answerLocally(userText) {
         : audioRequest
           ? await applyVoiceAudioRequest(audioRequest)
           : await runLocalRequest(parsedAction, { approvedRoots: approvedRootsFromFile(rootsPath) });
-      if (currentRequest !== controller || voicePaused) return;
+      if (currentRequest !== controller || quitting) return;
       currentRequest = null;
       recordAction(result.action, result.ok === false ? 'failed' : 'completed');
       setMessage(result.text);
@@ -419,7 +402,7 @@ async function answerLocally(userText) {
     const reply = String(data?.message?.content || '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
     if (!reply) throw new Error('The local model returned an empty response.');
 
-    if (currentRequest !== controller || voicePaused) return;
+    if (currentRequest !== controller || quitting) return;
     currentRequest = null;
     setMessage(reply.slice(0, 220));
     setDetail('Speaking…');
@@ -433,21 +416,26 @@ async function answerLocally(userText) {
     if (localAction) recordAction(preferenceRequest ? preferenceRequest.action : audioRequest ? 'audio-' + audioRequest.kind : parsedAction.name, 'failed');
     currentRequest = null;
     if (error?.name === 'AbortError' || error?.name === 'TimeoutError') {
-      setStatus(voicePaused ? 'paused' : 'idle');
-      setDetail(voicePaused ? 'Voice is paused' : 'The local model timed out. Try again.');
+      if (wakeWordEnabled) sendWorker('resume_wake');
+      setStatus(wakeWordEnabled ? 'armed' : 'idle');
+      setDetail(wakeWordEnabled ? 'I could not finish that. Say “ARIS” to try again.' : DEFAULT_DETAIL);
     } else if (/non-local model endpoint/.test(String(error?.message))) {
       setStatus('paused');
       setDetail('ARIS only accepts a local Ollama endpoint.');
+      if (wakeWordEnabled) sendWorker('resume_wake');
     } else if (audioRequest) {
       setStatus('idle');
-      setDetail('I could not change that audio route. Refresh the device list in Audio Settings and try again. ' + DEFAULT_DETAIL);
+      setDetail('I could not change that audio route. Refresh the device list in Audio Settings and try again.');
+      if (wakeWordEnabled) sendWorker('resume_wake');
     } else if (localAction) {
       setStatus('idle');
-      setDetail('I could not complete that local action. Check the Chrome installation or approved folder paths. ' + DEFAULT_DETAIL);
+      setDetail('I could not complete that local action. Check the Chrome installation or approved folder paths.');
+      if (wakeWordEnabled) sendWorker('resume_wake');
     } else {
       setStatus('idle');
       const reason = /Local model is not installed/.test(String(error?.message)) ? error.message : 'Local Ollama is unavailable. Start Ollama and try again.';
-      setDetail(reason + ' ' + DEFAULT_DETAIL);
+      setDetail(reason + (wakeWordEnabled ? ' Say “ARIS” to try again.' : ' ' + DEFAULT_DETAIL));
+      if (wakeWordEnabled) sendWorker('resume_wake');
     }
   }
 }
@@ -466,16 +454,16 @@ function showOrHideOverlay() {
 
 function updateTrayMenu() {
   if (!tray) return;
+  tray.setToolTip(wakeWordEnabled ? 'ARIS — wake word on' : 'ARIS — microphone off');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: showOverlay ? 'Hide status overlay' : 'Show status overlay', click: showOrHideOverlay },
     { label: 'Status: ' + status, enabled: false },
     { type: 'separator' },
-    { label: voicePaused ? 'Resume voice' : 'Pause voice', click: toggleVoicePause },
+    { label: 'Microphone wake word', type: 'checkbox', checked: wakeWordEnabled, click: toggleWakeWord },
     { label: 'Audio Settings…', click: openAudioSettings },
     { label: 'Set up offline voice', click: launchVoiceSetup },
     { label: 'Open saved preferences', click: openPreferencesFile },
     { label: 'Open local action log', click: openActionLog },
-    { label: 'Start voice: Ctrl+Alt+Shift+V', enabled: false },
     { label: 'Cancel: Ctrl+Alt+Shift+X', enabled: false },
     { type: 'separator' },
     {
@@ -566,11 +554,10 @@ function createOverlay() {
 
 function registerShortcuts() {
   globalShortcut.register(OVERLAY_HOTKEY, showOrHideOverlay);
-  const voiceRegistered = globalShortcut.register(VOICE_HOTKEY, toggleVoice);
   const cancelRegistered = globalShortcut.register(CANCEL_HOTKEY, cancelCurrentTurn);
-  if (!voiceRegistered || !cancelRegistered) {
+  if (!cancelRegistered) {
     setStatus('paused');
-    setDetail('Voice hotkey is in use by another app. Change the shortcut before speaking.');
+    setDetail('Cancel shortcut is in use by another app.');
   }
 }
 
@@ -590,7 +577,7 @@ app.whenReady().then(() => {
     return;
   }
 
-  ({ startWithWindows, voicePaused, audioInputDeviceId, audioOutputDeviceId, allowVoiceDeviceSwitching } = loadSettings());
+  ({ startWithWindows, audioInputDeviceId, audioOutputDeviceId, allowVoiceDeviceSwitching } = loadSettings());
   applyStartupSetting();
   createOverlay();
   createTray();

@@ -6,7 +6,7 @@
   "main": "src/main.cjs",
   "scripts": {
     "start": "electron .",
-    "check": "node --check src/main.cjs && node --check src/preload.cjs && node --check src/tools/index.cjs && node --check src/preferences.cjs && node --check src/audio.cjs && node --check src/renderer/settings.js && node --check src/renderer/status.js && python -B -c \"import ast,pathlib; [ast.parse(pathlib.Path(p).read_text(encoding='utf-8'), filename=p) for p in ('voice/worker.py','scripts/smoke_voice.py','scripts/smoke_worker.py','scripts/smoke_audio_devices.py','scripts/smoke_audio_route.py')]\"",
+    "check": "node --check src/main.cjs && node --check src/preload.cjs && node --check src/tools/index.cjs && node --check src/preferences.cjs && node --check src/audio.cjs && node --check src/renderer/settings.js && node --check src/renderer/status.js && python -B -c \"import ast,pathlib; [ast.parse(pathlib.Path(p).read_text(encoding='utf-8'), filename=p) for p in ('voice/worker.py','scripts/smoke_voice.py','scripts/smoke_worker.py','scripts/smoke_audio_devices.py','scripts/smoke_audio_route.py','scripts/smoke_wake_word.py')]\"",
     "test:tools": "node --test src/tools/index.test.cjs src/preferences.test.cjs src/audio.test.cjs",
     "pack:win": "electron-builder --win --dir",
     "dist:win": "electron-builder --win nsis"

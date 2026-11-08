@@ -5,7 +5,7 @@
 - Windows 10/11 x64.
 - Node.js LTS and npm.
 - Python 3.11 or later.
-- Windows microphone access enabled for desktop apps. ARIS asks Windows to open the default input only after push-to-talk starts.
+- Windows microphone access enabled for desktop apps. ARIS starts with its microphone disarmed; it opens the selected input only after you enable “Microphone wake word” from the notification-area tray menu.
 - Ollama for local language-model replies; `qwen3:8b` is the default model.
 - The project pins its desktop runtime in `package.json`; run `npm install` from the repository root.
 
@@ -21,9 +21,9 @@ Run `powershell -NoProfile -File scripts/setup_voice.ps1`. It installs pinned Py
 
 ARIS uses Vosk for offline speech recognition, Windows SAPI through `pyttsx3` for offline speech output, and only the local Ollama API at `127.0.0.1:11434` for replies. It sends no microphone audio to a cloud speech service and stores no transcript history in this section. If `qwen3:8b` is absent, run `ollama pull qwen3:8b`.
 
-Open “Audio Settings…” from the tray to detect available microphones/speakers and the Windows default endpoints, choose ARIS-specific routes, enable or disable voice-driven switching, or open Windows microphone privacy controls. Detection does not open the microphone; capture still begins only after a user presses the hotkey. With voice switching enabled, say “switch ARIS microphone to <listed device name>” or “switch ARIS output to <listed device name>”. Say “switch ARIS microphone to default” or “switch ARIS output to default” to return to the Windows default.
+Open “Audio Settings…” from the tray to detect microphones/speakers and Windows defaults, choose ARIS-specific routes, enable or disable voice-driven switching, or open Windows microphone privacy controls. Detection does not open the microphone. From the tray menu, turn on “Microphone wake word”; ARIS then listens locally for “ARIS” or “Hey ARIS.” Turn the same tray item off to close the microphone stream. Listening is always off after app startup, including Windows startup. While ARIS processes a request or speaks, microphone capture pauses and resumes afterward if wake listening remains enabled.
 
-Press `Ctrl+Alt+Shift+V` once to start capture and again to stop and get a response. Press `Ctrl+Alt+Shift+X` to cancel. Pause/resume from the tray. The microphone is opened only during the visible Listening state; there is no always-on wake word in this MVP. Use `Ctrl+Alt+Shift+X` to cancel a request or stop speech.
+Press `Ctrl+Alt+Shift+X` to cancel a request or stop speech. There is no push-to-talk hotkey. With voice switching enabled, say “switch ARIS microphone to <listed device name>” or “switch ARIS output to <listed device name>”. Say “switch ARIS microphone to default” or “switch ARIS output to default” to return to the Windows default.
 
 ### Section 3 local actions
 
@@ -62,6 +62,6 @@ USER_RULES.md      Empty owner-authored rules file
 
 ## Contribution workflow
 
-Keep changes focused on one project section. Update the project plan, architecture/security notes, and this guide when behavior changes. Run `npm run check`, `npm run test:tools`, and `npm run pack:win` on Windows, `python scripts/smoke_voice.py <model-folder>`, and `python scripts/smoke_worker.py <model-folder>`, and `python scripts/smoke_audio_devices.py` plus `python scripts/smoke_audio_route.py`. These offline checks use generated speech and do not open the microphone. Then manually verify the push-to-talk hotkey and audio on the target PC before release. The runtime may be installed into a temporary dependency directory if the workspace does not support package installation.
+Keep changes focused on one project section. Update the project plan, architecture/security notes, and this guide when behavior changes. Run `npm run check`, `npm run test:tools`, and `npm run pack:win` on Windows, `python scripts/smoke_voice.py <model-folder>`, and `python scripts/smoke_worker.py <model-folder>`, and `python scripts/smoke_audio_devices.py` plus `python scripts/smoke_audio_route.py`. These offline checks use generated speech and do not open the microphone. Then manually verify tray wake-word on/off, wake-word detection, and audible routed output on the target PC before release. The runtime may be installed into a temporary dependency directory if the workspace does not support package installation.
 
 Do not commit provider credentials, user data, recordings, screenshots, logs, local preferences, or generated build output. Use `.env.example` only for variable names with blank values; real credentials belong in OS-protected storage.
