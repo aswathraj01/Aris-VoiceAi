@@ -25,11 +25,15 @@ Local assistant coordinator
   └─ Local preference store and redacted action history
 ```
 
-The model adapter can be swapped later. The first MVP makes provider traffic explicit: audio stays local, and the current turn text goes only to the loopback Ollama service. No file or email content is sent in this section.
+The model adapter can be swapped later. Fixed deterministic intents route the first tools directly; model responses cannot invoke tools. The first MVP makes provider traffic explicit: audio stays local, and the current turn text goes only to the loopback Ollama service. No file or email content is sent. Section 3 can search names only in folders on the local approved-roots list.
 
 ## Current implementation section
 
-Section 2 adds user-triggered push-to-talk. A Python worker captures microphone audio only after the voice hotkey, Vosk transcribes it locally, and pyttsx3 speaks the result locally. The Electron coordinator sends only the current utterance to the loopback Ollama chat API and speaks the reply. No transcript history is persisted; there are no computer-action tools yet.
+Section 2 adds user-triggered push-to-talk. A Python worker captures microphone audio only after the voice hotkey, Vosk transcribes it locally, and pyttsx3 speaks the result locally. The Electron coordinator sends only the current utterance to the loopback Ollama chat API and speaks the reply. No transcript history is persisted. Section 3 adds fixed local tools that do not use model-generated commands.
+
+## Section 3 local tools
+
+The coordinator recognizes only three initial task patterns: open Chrome, open Gmail in Chrome, and search for a filename. The first two launch a fixed executable/URL without a shell. Search traverses only valid local directories from `%APPDATA%\aris-desktop\approved_roots.json` (actual app-data folder varies by Windows profile), skips symlinks and common system/dependency directories, and returns names only. Traversal has depth, entry, and result limits. A local `action-log.json` stores the timestamp, action name, and outcome for the latest 100 actions; it excludes prompts and filenames. Gmail launch opens the site and does not read or send mail.
 
 ## Planned request flow
 

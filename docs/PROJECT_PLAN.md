@@ -12,7 +12,7 @@ Deliver a useful, reviewable Windows assistant MVP that can hear a spoken reques
 
 1. **Foundation and desktop shell** — repository documentation, clean application structure, always-on-top top-right status overlay, and tray lifecycle. Startup registration is enabled only for an installed build and will be completed with packaging in Section 5. The overlay is mouse-transparent; tray controls remain available.
 2. **Voice conversation** — offline Vosk recognition, local Windows SAPI speech, explicit push-to-talk, cancel/pause behavior, local Ollama replies, and visible listening/thinking/speaking states.
-3. **Safe task tools** — allowlisted app launch (starting with Chrome), scoped file search, a visible action log, and confirmation for consequential actions. No arbitrary shell execution.
+3. **Safe task tools** — complete for the initial read-only scope: deterministic Chrome/Gmail launch and filename-only search in explicitly approved folders, plus a tray-accessible local action log. No arbitrary shell execution. Consequential actions remain out of scope until a confirmation broker exists.
 4. **Preferences and memory** — local preference store, explicit user correction capture, review/edit/delete controls, and no autonomous code or permission changes.
 5. **Integration and release** — manual walkthroughs on the target Windows machine, setup documentation, known limitations, and a tagged MVP release.
 
@@ -20,6 +20,7 @@ Deliver a useful, reviewable Windows assistant MVP that can hear a spoken reques
 
 | Window | Target |
 | --- | --- |
+| Nov 8–14 | Section 1: shell, overlay, startup/tray controls, repository documentation |
 | Nov 8–14 | Section 1: shell, overlay, startup/tray controls, repository documentation |
 | Nov 15–21 | Section 2: voice loop and provider boundary |
 | Nov 22–28 | Section 3: first safe computer actions |
@@ -41,6 +42,6 @@ Dates are planning targets. Progress depends on the available Windows SDKs, prov
 | --- | --- | --- |
 | 1. Foundation and desktop shell | Complete | Documentation, safe Electron shell, overlay, tray lifecycle, and blank rules file are in place. `npm run check` passed; a live Windows launch displayed the top-right Ready overlay. Startup installer wiring remains in Section 5. |
 | 2. Voice conversation | In progress | Offline TTS-to-Vosk smoke check passes; worker model-load/shutdown passes without opening the microphone; local Ollama responded to a synthetic prompt. User push-to-talk/microphone trial remains. |
-| 3. Safe task tools | Not started | |
+| 3. Safe task tools | In progress | Initial actions implemented: Chrome/Gmail launch and allowlisted filename search. Automated tests pending; no mailbox reading or sending. | |
 | 4. Preferences and memory | Not started | |
 | 5. Integration and release | Not started | |

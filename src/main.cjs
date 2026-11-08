@@ -1,8 +1,9 @@
-const { app, BrowserWindow, Menu, Tray, nativeImage, screen, globalShortcut, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, Tray, nativeImage, screen, globalShortcut, ipcMain, shell } = require('electron');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const readline = require('node:readline');
+const { approvedRootsFromFile, parseLocalRequest, runLocalRequest } = require('./tools/index.cjs');
 
 const APP_ID = 'com.aris.assistant';
 const OVERLAY_HOTKEY = 'CommandOrControl+Alt+Shift+A';
@@ -28,6 +29,31 @@ let quitting = false;
 
 function localDataPath(...parts) {
   return path.join(process.env.LOCALAPPDATA || app.getPath('userData'), 'ARIS', ...parts);
+}
+
+function actionLogPath() {
+  return path.join(app.getPath('userData'), 'action-log.json');
+}
+
+function recordAction(action, outcome) {
+  try {
+    const filePath = actionLogPath();
+    let entries = [];
+    try { entries = JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch {}
+    if (!Array.isArray(entries)) entries = [];
+    entries.push({ at: new Date().toISOString(), action, outcome });
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, JSON.stringify(entries.slice(-100), null, 2), { mode: 0o600 });
+  } catch {}
+}
+
+function openActionLog() {
+  const filePath = actionLogPath();
+  try {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    if (!fs.existsSync(filePath)) fs.writeFileSync(filePath, '[]\n', { mode: 0o600 });
+    void shell.openPath(filePath);
+  } catch {}
 }
 
 function settingsPath() {
@@ -297,10 +323,28 @@ async function ensureLocalOllama(signal) {
 async function answerLocally(userText) {
   if (voicePaused) return;
   setStatus('thinking');
-  setDetail('Thinking locally…');
+  const parsedAction = parseLocalRequest(userText);
   const controller = new AbortController();
   currentRequest = controller;
   try {
+    if (parsedAction) {
+      setStatus('working');
+      setDetail('Running an approved local action…');
+      const rootsPath = path.join(app.getPath('userData'), 'approved_roots.json');
+      const result = await runLocalRequest(parsedAction, { approvedRoots: approvedRootsFromFile(rootsPath) });
+      if (currentRequest !== controller || voicePaused) return;
+      currentRequest = null;
+      recordAction(result.action, 'completed');
+      setMessage(result.text);
+      setDetail('Speaking…');
+      setStatus('speaking');
+      if (!sendWorker('speak', { text: result.text })) {
+        setStatus('idle');
+        setDetail(result.text);
+      }
+      return;
+    }
+    setDetail('Thinking locally…');
     const parsedUrl = new URL(CHAT_URL);
     if (!['127.0.0.1', 'localhost', '::1'].includes(parsedUrl.hostname)) {
       throw new Error('ARIS is configured to use a non-local model endpoint.');
@@ -355,6 +399,7 @@ async function answerLocally(userText) {
     }
   } catch (error) {
     if (currentRequest !== controller) return;
+    if (parsedAction) recordAction(parsedAction.name, 'failed');
     currentRequest = null;
     if (error?.name === 'AbortError' || error?.name === 'TimeoutError') {
       setStatus(voicePaused ? 'paused' : 'idle');
@@ -362,6 +407,9 @@ async function answerLocally(userText) {
     } else if (/non-local model endpoint/.test(String(error?.message))) {
       setStatus('paused');
       setDetail('ARIS only accepts a local Ollama endpoint.');
+    } else if (parsedAction) {
+      setStatus('idle');
+      setDetail('I could not complete that local action. Check the Chrome installation or approved folder paths. ' + DEFAULT_DETAIL);
     } else {
       setStatus('idle');
       const reason = /Local model is not installed/.test(String(error?.message)) ? error.message : 'Local Ollama is unavailable. Start Ollama and try again.';
@@ -389,6 +437,7 @@ function updateTrayMenu() {
     { label: 'Status: ' + status, enabled: false },
     { type: 'separator' },
     { label: voicePaused ? 'Resume voice' : 'Pause voice', click: toggleVoicePause },
+    { label: 'Open local action log', click: openActionLog },
     { label: 'Start voice: Ctrl+Alt+Shift+V', enabled: false },
     { label: 'Cancel: Ctrl+Alt+Shift+X', enabled: false },
     { type: 'separator' },
