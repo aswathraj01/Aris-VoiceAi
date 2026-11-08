@@ -176,7 +176,7 @@ function stopWorker() {
 
 function handleWorkerMessage(event) {
   if (!event || typeof event.type !== 'string') return;
-  logEvent(event.type === 'error' ? 'error' : 'info', 'voice-worker', event.type, event.type === 'error' ? { detail: String(event.message || '').slice(0, 500) } : {});
+  logEvent(event.type === 'error' ? 'error' : 'info', 'voice-worker', event.type, event.type === 'error' ? { detail: String(event.message || '').slice(0, 500) } : event.type === 'armed' ? { sampleRate: event.sampleRate } : {});
   if (event.type === 'ready') {
     voiceReady = true;
     sendWorker('configure_audio', { inputDeviceId: audioInputDeviceId, outputDeviceId: audioOutputDeviceId });
@@ -193,7 +193,9 @@ function handleWorkerMessage(event) {
       return;
     }
     setStatus('armed');
-    setDetail('Microphone on. Say “ARIS” or “Hey ARIS” to wake me.');
+    const sampleRate = Number(event.sampleRate);
+    const rateLabel = Number.isFinite(sampleRate) && sampleRate > 0 ? ' at ' + Math.round(sampleRate / 1000) + ' kHz' : '';
+    setDetail('Microphone on' + rateLabel + '. Say “Iris” or “Hey Iris” to wake me.');
     return;
   }
   if (event.type === 'disarmed') {

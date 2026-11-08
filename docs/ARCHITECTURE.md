@@ -34,7 +34,7 @@ Section 2 adds tray-controlled offline wake-word listening. Listening starts onl
 
 ## Audio settings and device routing
 
-The tray opens a separate clickable settings window. A small Python query lists available input/output endpoints, the Windows defaults, and host API labels; it never opens a capture or playback stream. The owner can select ARIS-specific input/output routes and optionally allow deterministic voice requests to change those routes. The microphone stream is opened only while the owner has explicitly enabled wake-word listening, and closes when they turn it off. Output selection routes synthesized audio to the chosen endpoint without changing the Windows system default.
+The tray opens a separate clickable settings window. A small Python query lists available input/output endpoints, the Windows defaults, supported default sample rates, and host API labels; it never opens a capture or playback stream. The voice worker probes supported input formats without opening a capture stream and uses a supported/native sample rate for recognition. The owner can select ARIS-specific input/output routes and optionally allow deterministic voice requests to change those routes. The microphone stream is opened only while the owner has explicitly enabled wake-word listening, and closes when they turn it off. Output selection routes synthesized audio to the chosen endpoint without changing the Windows system default.
 
 ## Section 5 packaging boundary
 

@@ -16,6 +16,7 @@ from vosk import KaldiRecognizer, Model, SetLogLevel
 
 SetLogLevel(-1)
 SAMPLE_RATE = 16000
+active_sample_rate = SAMPLE_RATE
 BLOCK_SIZE = 4000
 COMMAND_TIMEOUT = 9.0
 WAKE_GRAMMAR = json.dumps(["aries", "hey aries", "iris", "hey iris", "irish", "hey irish", "aris", "hey aris", "[unk]"])
@@ -73,6 +74,7 @@ def enumerate_devices():
             "hostApi": host_api,
             "maxInputChannels": int(raw["max_input_channels"]),
             "maxOutputChannels": int(raw["max_output_channels"]),
+            "defaultSampleRate": int(round(float(raw["default_samplerate"]))),
         }
         if device["maxInputChannels"] > 0:
             devices["inputs"].append(device)
@@ -103,6 +105,21 @@ def resolve_device_id(device_id, direction):
     raise RuntimeError("The selected audio device is no longer available.")
 
 
+def choose_input_sample_rate(device):
+    info = sd.query_devices(device, "input")
+    native_rate = int(round(float(info["default_samplerate"])))
+    candidates = list(dict.fromkeys([SAMPLE_RATE, native_rate, 48000, 44100, 32000, 24000, 22050]))
+    failures = []
+    for rate in candidates:
+        try:
+            sd.check_input_settings(device=device, channels=1, dtype="int16", samplerate=rate)
+            return rate
+        except Exception as exc:
+            failures.append(str(exc))
+    reason = failures[-1] if failures else "No candidate sample rates were available."
+    raise RuntimeError("Microphone '" + str(info["name"]) + "' does not support ARIS input formats. Tried " + ", ".join(str(rate) for rate in candidates) + " Hz. " + reason)
+
+
 def list_devices_cli():
     try:
         sys.stdout.write(json.dumps(enumerate_devices(), ensure_ascii=False) + "\n")
@@ -127,7 +144,7 @@ def audio_callback(indata, frames, timing, status):
 
 
 def make_recognizer(wake=False):
-    instance = KaldiRecognizer(model, SAMPLE_RATE, WAKE_GRAMMAR) if wake else KaldiRecognizer(model, SAMPLE_RATE)
+    instance = KaldiRecognizer(model, active_sample_rate, WAKE_GRAMMAR) if wake else KaldiRecognizer(model, active_sample_rate)
     instance.SetWords(False)
     return instance
 
@@ -152,10 +169,11 @@ def close_input_stream():
 
 
 def open_input_stream():
-    global stream, is_listening
+    global stream, is_listening, active_sample_rate
     device = resolve_device_id(selected_input_device_id, "inputs")
+    active_sample_rate = choose_input_sample_rate(device)
     stream = sd.RawInputStream(
-        samplerate=SAMPLE_RATE, blocksize=BLOCK_SIZE, device=device, channels=1,
+        samplerate=active_sample_rate, blocksize=BLOCK_SIZE, device=device, channels=1,
         dtype="int16", callback=audio_callback,
     )
     stream.start()
@@ -172,7 +190,7 @@ def begin_wake_monitoring():
     recognizer = make_recognizer(wake=True)
     open_input_stream()
     mode = "wake"
-    send("armed")
+    send("armed", sampleRate=active_sample_rate)
 
 
 def begin_command_capture():

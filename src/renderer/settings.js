@@ -24,7 +24,7 @@ function fillSelect(select, devices, defaultId, selectedId, label) {
   for (const device of devices) {
     const option = document.createElement('option');
     option.value = device.id;
-    option.textContent = device.name + ' — ' + device.hostApi;
+    option.textContent = device.name + ' — ' + device.hostApi + (device.defaultSampleRate ? ' · ' + Math.round(device.defaultSampleRate / 1000) + ' kHz' : '');
     select.append(option);
   }
   if (selectedId && !devices.some((device) => device.id === selectedId)) {
@@ -44,8 +44,8 @@ function render(data) {
   const defaultOutput = fillSelect(outputSelect, currentDevices.outputs, currentDevices.defaultOutputId, currentSettings.outputDeviceId, 'speaker');
   const selectedInput = currentDevices.inputs.find((device) => device.id === currentSettings.inputDeviceId);
   const selectedOutput = currentDevices.outputs.find((device) => device.id === currentSettings.outputDeviceId);
-  inputDetected.textContent = 'Windows default: ' + (defaultInput?.name || 'none detected') + ' · ARIS route: ' + (selectedInput ? selectedInput.name + ' — ' + selectedInput.hostApi : 'Windows default');
-  outputDetected.textContent = 'Windows default: ' + (defaultOutput?.name || 'none detected') + ' · ARIS route: ' + (selectedOutput ? selectedOutput.name + ' — ' + selectedOutput.hostApi : 'Windows default');
+  inputDetected.textContent = 'Windows default: ' + (defaultInput?.name || 'none detected') + ' · ARIS route: ' + (selectedInput ? selectedInput.name + ' — ' + selectedInput.hostApi + (selectedInput.defaultSampleRate ? ' · ' + Math.round(selectedInput.defaultSampleRate / 1000) + ' kHz' : '') : 'Windows default');
+  outputDetected.textContent = 'Windows default: ' + (defaultOutput?.name || 'none detected') + ' · ARIS route: ' + (selectedOutput ? selectedOutput.name + ' — ' + selectedOutput.hostApi + (selectedOutput.defaultSampleRate ? ' · ' + Math.round(selectedOutput.defaultSampleRate / 1000) + ' kHz' : '') : 'Windows default');
   allowVoiceSwitching.checked = currentSettings.allowVoiceDeviceSwitching;
   status.textContent = currentDevices.inputs.length + ' microphone(s), ' + currentDevices.outputs.length + ' output device(s) found. Detection did not open them.';
 }
