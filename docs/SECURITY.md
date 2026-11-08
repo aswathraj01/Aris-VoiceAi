@@ -13,7 +13,7 @@
 
 ## Provider and data boundary
 
-The desktop shell can be local, while speech recognition or a language model may still send prompts or audio to a provider. No cloud service should be enabled by default until the provider, data sent, retention, and configuration are documented. A local model can reduce external data sharing but depends on the device's performance and available models.
+The desktop shell can be local, while speech recognition or a language model may still send prompts or audio to a provider. Section 2 uses offline Vosk recognition and local Windows SAPI speech output. It sends recognized text only to the configured loopback Ollama endpoint, restricted to localhost/127.0.0.1/::1. It does not send microphone audio to a cloud provider. Microphone capture begins only after the user presses the voice hotkey and stops when they press it again, cancel, or pause. Audio and transcripts are not written to disk.
 
 ## User rules
 

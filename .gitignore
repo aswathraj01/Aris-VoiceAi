@@ -7,3 +7,7 @@ release/
 *.log
 user-data/
 *.tmp
+
+__pycache__/
+*.pyc
+.venv/

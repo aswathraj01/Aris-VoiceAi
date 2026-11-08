@@ -97,3 +97,8 @@ html, body {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }
+
+.copy { z-index: 1; min-width: 0; flex: 1; overflow: hidden; }
+.message { margin-top: 2px; max-width: 205px; overflow: hidden; color: #77d9e9; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.message[hidden] { display: none; }
+.detail { overflow: hidden; text-overflow: ellipsis; }

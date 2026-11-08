@@ -25,11 +25,11 @@ Local assistant coordinator
   └─ Local preference store and redacted action history
 ```
 
-The model adapter can be swapped later. The first MVP must make provider traffic explicit and must not send file, email, or microphone content to a service unless the owner enables and understands that integration.
+The model adapter can be swapped later. The first MVP makes provider traffic explicit: audio stays local, and the current turn text goes only to the loopback Ollama service. No file or email content is sent in this section.
 
 ## Current implementation section
 
-Section 1 creates only the desktop shell, overlay, startup/tray lifecycle, and safe IPC boundary. It does not yet listen to the microphone or perform computer actions. The UI must not claim that ARIS is listening until the voice adapter is implemented and active.
+Section 2 adds user-triggered push-to-talk. A Python worker captures microphone audio only after the voice hotkey, Vosk transcribes it locally, and pyttsx3 speaks the result locally. The Electron coordinator sends only the current utterance to the loopback Ollama chat API and speaks the reply. No transcript history is persisted; there are no computer-action tools yet.
 
 ## Planned request flow
 

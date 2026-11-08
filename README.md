@@ -6,7 +6,7 @@ The MVP does not attempt unrestricted computer control or self-modifying behavio
 
 ## Project status
 
-See [the project plan](docs/PROJECT_PLAN.md), [architecture](docs/ARCHITECTURE.md), [security model](docs/SECURITY.md), and [developer guide](docs/DEVELOPMENT.md). The first implementation section is the Windows shell and status overlay. Voice and task tools will be added in later sections.
+See [the project plan](docs/PROJECT_PLAN.md), [architecture](docs/ARCHITECTURE.md), [security model](docs/SECURITY.md), and [developer guide](docs/DEVELOPMENT.md). The Windows status shell is in place, and Section 2 adds local push-to-talk voice with offline recognition and speech output. Computer-task tools and user-controlled memory are still planned. See the [developer guide](docs/DEVELOPMENT.md) for one-time voice setup and hotkeys.
 
 ## User rules
 

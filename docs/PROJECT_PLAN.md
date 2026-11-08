@@ -11,7 +11,7 @@ Deliver a useful, reviewable Windows assistant MVP that can hear a spoken reques
 ## Sections and acceptance criteria
 
 1. **Foundation and desktop shell** — repository documentation, clean application structure, always-on-top top-right status overlay, and tray lifecycle. Startup registration is enabled only for an installed build and will be completed with packaging in Section 5. The overlay is mouse-transparent; tray controls remain available.
-2. **Voice conversation** — microphone permission flow, speech recognition, speech output, cancel/pause behavior, and visible listening/thinking/speaking states. The selected speech/LLM provider and its data handling must be documented before enabling it.
+2. **Voice conversation** — offline Vosk recognition, local Windows SAPI speech, explicit push-to-talk, cancel/pause behavior, local Ollama replies, and visible listening/thinking/speaking states.
 3. **Safe task tools** — allowlisted app launch (starting with Chrome), scoped file search, a visible action log, and confirmation for consequential actions. No arbitrary shell execution.
 4. **Preferences and memory** — local preference store, explicit user correction capture, review/edit/delete controls, and no autonomous code or permission changes.
 5. **Integration and release** — manual walkthroughs on the target Windows machine, setup documentation, known limitations, and a tagged MVP release.
@@ -40,7 +40,7 @@ Dates are planning targets. Progress depends on the available Windows SDKs, prov
 | Section | Status | Notes |
 | --- | --- | --- |
 | 1. Foundation and desktop shell | Complete | Documentation, safe Electron shell, overlay, tray lifecycle, and blank rules file are in place. `npm run check` passed; a live Windows launch displayed the top-right Ready overlay. Startup installer wiring remains in Section 5. |
-| 2. Voice conversation | Not started | |
+| 2. Voice conversation | In progress | Offline TTS-to-Vosk smoke check passes; worker model-load/shutdown passes without opening the microphone; local Ollama responded to a synthetic prompt. User push-to-talk/microphone trial remains. |
 | 3. Safe task tools | Not started | |
 | 4. Preferences and memory | Not started | |
 | 5. Integration and release | Not started | |
