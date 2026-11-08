@@ -15,7 +15,7 @@
 npm start
 ```
 
-For live diagnostics, run `npm run debug`. This opens ARIS with a Debug Console window and prints app/worker logs to the launching terminal. For an installed build, start `ARIS.exe --debug`; the same console opens. Logs are also written to `%LOCALAPPDATA%\ARIS\logs\aris.log`. Diagnostic logs omit recognized speech and assistant replies. If the worker crashes while wake mode is enabled, ARIS retries up to three times; open the Debug Console for the exit code and Python/PortAudio error.
+For live diagnostics, run `npm run debug`. This opens ARIS with a Debug Console window and prints app/worker logs to the launching terminal. For an installed build, start `ARIS.exe --aris-debug`; the same console opens. Debug launches do not modify the Windows startup setting. Logs are also written to `%LOCALAPPDATA%\ARIS\logs\aris.log`. Diagnostic logs omit recognized speech and assistant replies. If the worker crashes while wake mode is enabled, ARIS retries up to three times; open the Debug Console for the exit code and Python/PortAudio error.
 
 ### One-time offline voice setup
 

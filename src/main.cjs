@@ -13,7 +13,7 @@ const CANCEL_HOTKEY = 'CommandOrControl+Alt+Shift+X';
 const DEFAULT_DETAIL = 'Microphone off. Enable wake word from the tray';
 const MODEL_NAME = process.env.ARIS_OLLAMA_MODEL || 'qwen3:8b';
 const CHAT_URL = process.env.ARIS_OLLAMA_URL || 'http://127.0.0.1:11434/api/chat';
-const DEBUG_MODE = process.argv.includes('--debug') || process.env.ARIS_DEBUG === '1';
+const DEBUG_MODE = process.argv.includes('--aris-debug') || process.env.ARIS_DEBUG === '1';
 const MAX_RESTART_ATTEMPTS = 3;
 let overlay;
 let audioWindow;
@@ -124,7 +124,7 @@ function saveSettings() {
 }
 
 function applyStartupSetting() {
-  if (process.platform !== 'win32') return;
+  if (process.platform !== 'win32' || DEBUG_MODE || process.argv.includes('--no-startup-registration')) return;
   if (!app.isPackaged) {
     app.setLoginItemSettings({ openAtLogin: false, path: process.execPath });
     return;
