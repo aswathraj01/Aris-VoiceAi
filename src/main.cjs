@@ -709,6 +709,7 @@ app.whenReady().then(() => {
   createTray();
   registerShortcuts();
   if (DEBUG_MODE) showDebugConsole();
+  if (DEBUG_MODE && process.argv.includes('--aris-debug-listen')) toggleWakeWord();
 
   app.on('second-instance', () => {
     if (overlay && !overlay.isDestroyed()) {
