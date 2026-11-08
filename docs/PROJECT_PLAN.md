@@ -42,6 +42,6 @@ Dates are planning targets. Progress depends on the available Windows SDKs, prov
 | --- | --- | --- |
 | 1. Foundation and desktop shell | Complete | Documentation, safe Electron shell, overlay, tray lifecycle, and blank rules file are in place. `npm run check` passed; a live Windows launch displayed the top-right Ready overlay. Startup installer wiring remains in Section 5. |
 | 2. Voice conversation | In progress | Offline TTS-to-Vosk smoke check passes; worker model-load/shutdown passes without opening the microphone; local Ollama responded to a synthetic prompt. User push-to-talk/microphone trial remains. |
-| 3. Safe task tools | In progress | Initial actions implemented: Chrome/Gmail launch and allowlisted filename search. Automated tests pending; no mailbox reading or sending. | |
+| 3. Safe task tools | In progress | Chrome/Gmail launch and allowlisted filename search are implemented; all four unit tests pass. Live voice-to-Chrome walkthrough awaits the owner’s microphone trial. No mailbox reading or sending. | |
 | 4. Preferences and memory | Complete | Explicit remember/list requests, local editable JSON store, tray access, and bounded preference injection into local replies. `npm run test:tools` covers capture, deduplication, and editing. | |
 | 5. Integration and release | In progress | Windows NSIS installer and packaged offline voice setup are being wired. Still requires a built-installer smoke check and the owner’s live microphone walkthrough. | |
