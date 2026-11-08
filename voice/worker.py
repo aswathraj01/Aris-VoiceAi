@@ -1,6 +1,7 @@
 import json
 import os
 import queue
+import subprocess
 import sys
 import tempfile
 import threading
@@ -31,7 +32,6 @@ mode = "idle"
 armed = False
 command_started_at = 0.0
 completed_segments = []
-speech_engine = None
 selected_input_device_id = ""
 selected_output_device_id = ""
 wake_audio_buffer = []
@@ -279,17 +279,31 @@ def process_audio():
         send("error", message="Speech recognition stopped after an audio error: " + type(exc).__name__ + ": " + str(exc)[:240])
 
 
-def speak_text(text):
-    if not selected_output_device_id:
-        speech_engine.say(text)
-        speech_engine.runAndWait()
-        return
+def synthesize_to_wav(output_path, text):
+    engine = pyttsx3.init()
+    engine.setProperty("rate", 165)
+    engine.save_to_file(text, str(output_path))
+    engine.runAndWait()
+    engine.stop()
+    if not Path(output_path).is_file() or Path(output_path).stat().st_size < 44:
+        raise RuntimeError("Speech engine did not create a valid WAV file.")
 
-    output_device = resolve_device_id(selected_output_device_id, "outputs")
+
+def speak_text(text):
+    output_device = resolve_device_id(selected_output_device_id, "outputs") if selected_output_device_id else None
     with tempfile.TemporaryDirectory(prefix="aris-speech-") as temp_dir:
         wav_path = Path(temp_dir) / "speech.wav"
-        speech_engine.save_to_file(text, str(wav_path))
-        speech_engine.runAndWait()
+        command = [sys.executable, str(Path(__file__).resolve()), "--synthesize-to-wav", str(wav_path), str(text)[:1600]]
+        try:
+            result = subprocess.run(
+                command, capture_output=True, text=True, timeout=30,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("Offline speech synthesis timed out after 30 seconds.") from exc
+        if result.returncode != 0:
+            reason = (result.stderr or result.stdout or "Speech synthesis process failed.").strip()
+            raise RuntimeError(reason[-600:])
         with wave.open(str(wav_path), "rb") as audio:
             if audio.getcomptype() != "NONE" or audio.getsampwidth() != 2:
                 raise RuntimeError("Speech engine produced an unsupported audio format.")
@@ -301,8 +315,23 @@ def speak_text(text):
             sd.play(samples, samplerate=sample_rate, device=output_device, blocking=True)
 
 
+def synthesize_to_wav_cli():
+    if len(sys.argv) < 4:
+        sys.stderr.write("Expected output WAV path and speech text.\n")
+        return 2
+    try:
+        synthesize_to_wav(sys.argv[2], " ".join(sys.argv[3:]))
+        return 0
+    except Exception as exc:
+        if DEBUG_MODE:
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+        else:
+            sys.stderr.write(type(exc).__name__ + ": " + str(exc) + "\n")
+        return 2
+
 def main():
-    global model, speech_engine, armed, mode, selected_input_device_id, selected_output_device_id
+    global model, armed, mode, selected_input_device_id, selected_output_device_id
     model_path = Path(sys.argv[1]).expanduser() if len(sys.argv) > 1 else Path("")
     if not model_path.is_dir():
         send("error", message="Offline speech model is missing at " + str(model_path) + ". Run the voice setup instructions.")
@@ -310,8 +339,6 @@ def main():
 
     try:
         model = Model(str(model_path))
-        speech_engine = pyttsx3.init()
-        speech_engine.setProperty("rate", 165)
     except Exception as exc:
         if DEBUG_MODE:
             import traceback
@@ -419,15 +446,12 @@ def main():
             armed = False
             close_input_stream()
             clear_audio_queue()
-            if speech_engine is not None:
-                try:
-                    speech_engine.stop()
-                except Exception:
-                    pass
             return 0
 
 
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "--synthesize-to-wav":
+        raise SystemExit(synthesize_to_wav_cli())
     if len(sys.argv) > 1 and sys.argv[1] == "--list-devices":
         raise SystemExit(list_devices_cli())
     raise SystemExit(main())

@@ -35,6 +35,8 @@ Say “remember that …” to save a preference and “list preferences” to r
 
 Run `npm run test:tools` for local action and preference tests.
 
+Speech output uses a short-lived local SAPI synthesis process per utterance so a stuck Windows speech driver cannot block future turns. The output route is applied during playback.
+
 The app is designed to stay in the notification area when its window is closed. Use the tray menu to show the overlay or exit. The overlay itself is mouse-transparent. The installed build registers for user login by default. Toggle “Start ARIS with Windows” from the tray menu. Startup registration is per-user; development runs do not register themselves.
 
 ## Build a Windows installer
