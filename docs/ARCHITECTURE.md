@@ -31,6 +31,10 @@ The model adapter can be swapped later. Fixed deterministic intents route the fi
 
 Section 2 adds user-triggered push-to-talk. A Python worker captures microphone audio only after the voice hotkey, Vosk transcribes it locally, and pyttsx3 speaks the result locally. The Electron coordinator sends only the current utterance to the loopback Ollama chat API and speaks the reply. No transcript history is persisted. Section 3 adds fixed local tools that do not use model-generated commands.
 
+## Section 5 packaging boundary
+
+The Windows build packages the Electron app and the small Python worker, while keeping Python packages, the Vosk model, Ollama, settings, preferences, approved folder roots, and action history outside the installer payload. A visible tray action starts the fixed voice setup script. Startup registration is available only from an installed build and can be disabled in the tray menu.
+
 ## Section 4 local preferences
 
 Only a deterministic “remember …” request writes a preference. “List preferences” reads the saved entries. The tray opens `preferences.json` in the system’s default editor so the owner can review, edit, or remove entries. The coordinator reads this file for each model turn and adds the text as untrusted personalization context. Preferences cannot enable tools, override fixed safety rules, or alter code. The store keeps at most 40 entries of up to 300 characters each.

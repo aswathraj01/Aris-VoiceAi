@@ -11,6 +11,14 @@
 - Keep action history local, minimal, and redacted. Provide a way to clear it.
 - Keep local data outside the source repository and exclude it from Git.
 
+## Installer and startup
+
+The NSIS installer is per-user. Startup registration runs ARIS under the same Windows account and is controlled by the tray setting. Voice setup is a fixed project script launched only after the user chooses the tray action; it installs pinned Python packages and downloads the Vosk model. The installer does not bundle Python, a language model, user data, or credentials. The unsigned MVP installer may receive an unknown-publisher warning.
+
+## Build dependency audit
+
+As of November 8, 2026, `npm audit --omit=dev` reports no runtime dependency vulnerabilities. The development-only `electron-builder` dependency tree reports six moderate `minimatch` advisories. These packages are used only to produce installers and are not included in the packaged application. Recheck the audit before release and update to a compatible patched builder release when available; do not apply a major downgrade automatically.
+
 ## Provider and data boundary
 
 The desktop shell can be local, while speech recognition or a language model may still send prompts or audio to a provider. Section 2 uses offline Vosk recognition and local Windows SAPI speech output. It sends recognized text only to the configured loopback Ollama endpoint, restricted to localhost/127.0.0.1/::1. It does not send microphone audio to a cloud provider. Microphone capture begins only after the user presses the voice hotkey and stops when they press it again, cancel, or pause. Audio and transcripts are not written to disk.

@@ -193,7 +193,9 @@ function handleWorkerMessage(event) {
 
 function createVoiceWorker() {
   if (voiceWorker && !voiceWorker.killed) return;
-  const workerScript = path.join(__dirname, 'voice', 'worker.py');
+  const workerScript = app.isPackaged
+    ? path.join(process.resourcesPath, 'voice', 'worker.py')
+    : path.join(__dirname, 'voice', 'worker.py');
   const venvPython = localDataPath('venv', 'Scripts', 'python.exe');
   const python = process.env.ARIS_PYTHON || (fs.existsSync(venvPython) ? venvPython : 'python');
   const modelPath = process.env.ARIS_VOSK_MODEL_DIR || localDataPath('models', 'vosk-model-small-en-in-0.4');
@@ -456,6 +458,7 @@ function updateTrayMenu() {
     { label: 'Status: ' + status, enabled: false },
     { type: 'separator' },
     { label: voicePaused ? 'Resume voice' : 'Pause voice', click: toggleVoicePause },
+    { label: 'Set up offline voice', click: launchVoiceSetup },
     { label: 'Open saved preferences', click: openPreferencesFile },
     { label: 'Open local action log', click: openActionLog },
     { label: 'Start voice: Ctrl+Alt+Shift+V', enabled: false },
@@ -476,6 +479,20 @@ function updateTrayMenu() {
     { type: 'separator' },
     { label: 'Quit ARIS', click: () => { quitting = true; app.quit(); } }
   ]));
+}
+
+function launchVoiceSetup() {
+  const scriptPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'scripts', 'setup_voice.ps1')
+    : path.join(__dirname, '..', 'scripts', 'setup_voice.ps1');
+  if (!fs.existsSync(scriptPath)) {
+    setDetail('Voice setup script was not found.');
+    return;
+  }
+  spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath], {
+    windowsHide: false,
+    stdio: 'ignore'
+  }).on('error', () => setDetail('Could not open the voice setup window.'));
 }
 
 function createTray() {

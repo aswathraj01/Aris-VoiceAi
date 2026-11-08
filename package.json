@@ -7,9 +7,58 @@
   "scripts": {
     "start": "electron .",
     "check": "node --check src/main.cjs && node --check src/preload.cjs && node --check src/tools/index.cjs && node --check src/preferences.cjs && node --check src/renderer/status.js && python -B -c \"import ast,pathlib; [ast.parse(pathlib.Path(p).read_text(encoding='utf-8'), filename=p) for p in ('voice/worker.py','scripts/smoke_voice.py','scripts/smoke_worker.py')]\"",
-    "test:tools": "node --test src/tools/index.test.cjs src/preferences.test.cjs"
+    "test:tools": "node --test src/tools/index.test.cjs src/preferences.test.cjs",
+    "pack:win": "electron-builder --win --dir",
+    "dist:win": "electron-builder --win nsis"
   },
   "devDependencies": {
-    "electron": "45.2.3"
-  }
+    "electron": "45.2.3",
+    "electron-builder": "26.18.1"
+  },
+  "build": {
+    "appId": "com.aris.assistant",
+    "productName": "ARIS",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "!src/**/*.test.cjs",
+      "USER_RULES.md",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "voice/worker.py",
+        "to": "voice/worker.py"
+      },
+      {
+        "from": "voice/requirements.txt",
+        "to": "voice/requirements.txt"
+      },
+      {
+        "from": "scripts/setup_voice.ps1",
+        "to": "scripts/setup_voice.ps1"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true
+    }
+  },
+  "author": "Aswath Raj"
 }

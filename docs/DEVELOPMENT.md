@@ -31,7 +31,13 @@ Say “remember that …” to save a preference and “list preferences” to r
 
 Run `npm run test:tools` for local action and preference tests.
 
-The app is designed to stay in the notification area when its window is closed. Use the tray menu to show the overlay or exit. The overlay itself is mouse-transparent. The Windows startup preference will be active in the installed build after packaging is configured in Section 5.
+The app is designed to stay in the notification area when its window is closed. Use the tray menu to show the overlay or exit. The overlay itself is mouse-transparent. The installed build registers for user login by default. Toggle “Start ARIS with Windows” from the tray menu. Startup registration is per-user; development runs do not register themselves.
+
+## Build a Windows installer
+
+Install dependencies with `npm install`, then run `npm run pack:win` for an unpacked smoke build or `npm run dist:win` for the per-user NSIS installer in `dist/`. The installer is unsigned in this MVP, so Windows may show an unknown-publisher notice. The app does not install Python or Ollama. After installation, use the tray menu’s “Set up offline voice” action to install the pinned local Python packages and download the Vosk model. This step downloads the model once from the official Vosk host.
+
+The installer uses electron-builder’s NSIS target in assisted per-user mode, with a selectable install directory and no elevation request by default. See the [NSIS configuration reference](https://www.electron.build/docs/nsis/).
 
 ## Project layout
 
@@ -41,6 +47,7 @@ src/preload.cjs    Restricted context bridge
 src/renderer/      Status overlay and voice feedback
 src/tools/         Fixed local action parser, allowlisted tools, and tests
 src/preferences.cjs Explicit local preference store
+package-lock.json   Pinned npm dependency tree
 voice/             Offline voice worker and pinned Python dependencies
 scripts/           Voice setup and offline smoke checks
 docs/              Architecture, security, plan, and development notes
@@ -49,6 +56,6 @@ USER_RULES.md      Empty owner-authored rules file
 
 ## Contribution workflow
 
-Keep changes focused on one project section. Update the project plan, architecture/security notes, and this guide when behavior changes. Run `npm run check`, `npm run test:tools`, `python scripts/smoke_voice.py <model-folder>`, and `python scripts/smoke_worker.py <model-folder>`. These offline checks use generated speech and do not open the microphone. Then manually verify the push-to-talk hotkey and audio on the target PC before release. The runtime may be installed into a temporary dependency directory if the workspace does not support package installation.
+Keep changes focused on one project section. Update the project plan, architecture/security notes, and this guide when behavior changes. Run `npm run check`, `npm run test:tools`, and `npm run pack:win` on Windows, `python scripts/smoke_voice.py <model-folder>`, and `python scripts/smoke_worker.py <model-folder>`. These offline checks use generated speech and do not open the microphone. Then manually verify the push-to-talk hotkey and audio on the target PC before release. The runtime may be installed into a temporary dependency directory if the workspace does not support package installation.
 
 Do not commit provider credentials, user data, recordings, screenshots, logs, local preferences, or generated build output. Use `.env.example` only for variable names with blank values; real credentials belong in OS-protected storage.
