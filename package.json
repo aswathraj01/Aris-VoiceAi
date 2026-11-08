@@ -34,6 +34,10 @@
         "to": "voice/worker.py"
       },
       {
+        "from": "voice/synthesize.ps1",
+        "to": "voice/synthesize.ps1"
+      },
+      {
         "from": "voice/requirements.txt",
         "to": "voice/requirements.txt"
       },

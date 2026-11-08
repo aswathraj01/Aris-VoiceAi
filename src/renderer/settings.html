@@ -25,6 +25,15 @@
         <select id="outputDevice" autocomplete="off"><option>Detecting devices…</option></select>
         <p id="outputDetected" class="hint">Checking the Windows default speaker…</p>
       </section>
+      <section class="field">
+        <label for="conversationTimeout">Conversation mode idle timeout</label>
+        <select id="conversationTimeout" autocomplete="off">
+          <option value="10">Return to wake standby after 10 seconds</option>
+          <option value="15">Return to wake standby after 15 seconds</option>
+          <option value="20">Return to wake standby after 20 seconds</option>
+        </select>
+        <p class="hint">After ARIS replies, it listens for follow-up requests. Silence ends the conversation and returns to wake-word standby.</p>
+      </section>
       <section class="permission">
         <div><h2>Microphone permission</h2><p>Windows controls microphone privacy. ARIS opens the selected input only while wake-word listening is enabled from the tray.</p></div>
         <button id="openPrivacy" class="secondary" type="button">Open Windows privacy settings</button>

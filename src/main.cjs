@@ -10,6 +10,8 @@ const { DEFAULT_AUDIO_SETTINGS, audioSettingsFromFile, parseAudioRequest, resolv
 const APP_ID = 'com.aris.assistant';
 const OVERLAY_HOTKEY = 'CommandOrControl+Alt+Shift+A';
 const CANCEL_HOTKEY = 'CommandOrControl+Alt+Shift+X';
+const CONVERSATION_TIMEOUT_OPTIONS = new Set([10, 15, 20]);
+const DEFAULT_CONVERSATION_TIMEOUT_SECONDS = 15;
 const DEFAULT_DETAIL = 'Microphone off. Enable wake word from the tray';
 const MODEL_NAME = process.env.ARIS_OLLAMA_MODEL || 'qwen3:8b';
 const CHAT_URL = process.env.ARIS_OLLAMA_URL || 'http://127.0.0.1:11434/api/chat';
@@ -22,6 +24,9 @@ let tray;
 let voiceWorker;
 let voiceReady = false;
 let wakeWordEnabled = false;
+let conversationActive = false;
+let conversationTimeoutSeconds = DEFAULT_CONVERSATION_TIMEOUT_SECONDS;
+let lastYouTubeSearchQuery = '';
 let voiceStartedAt = 0;
 let restartAttempts = 0;
 let restartTimer;
@@ -111,16 +116,17 @@ function loadSettings() {
     const parsed = JSON.parse(fs.readFileSync(settingsPath(), 'utf8'));
     return {
       startWithWindows: parsed.startWithWindows !== false,
+      conversationTimeoutSeconds: CONVERSATION_TIMEOUT_OPTIONS.has(Number(parsed.conversationTimeoutSeconds)) ? Number(parsed.conversationTimeoutSeconds) : DEFAULT_CONVERSATION_TIMEOUT_SECONDS,
       ...audioSettingsFromFile(settingsPath())
     };
   } catch {
-    return { startWithWindows: true, ...DEFAULT_AUDIO_SETTINGS };
+    return { startWithWindows: true, conversationTimeoutSeconds: DEFAULT_CONVERSATION_TIMEOUT_SECONDS, ...DEFAULT_AUDIO_SETTINGS };
   }
 }
 
 function saveSettings() {
   fs.mkdirSync(app.getPath('userData'), { recursive: true });
-  fs.writeFileSync(settingsPath(), JSON.stringify({ startWithWindows, audioInputDeviceId, audioOutputDeviceId, allowVoiceDeviceSwitching }, null, 2), { mode: 0o600 });
+  fs.writeFileSync(settingsPath(), JSON.stringify({ startWithWindows, audioInputDeviceId, audioOutputDeviceId, allowVoiceDeviceSwitching, conversationTimeoutSeconds }, null, 2), { mode: 0o600 });
 }
 
 function applyStartupSetting() {
@@ -179,8 +185,11 @@ function handleWorkerMessage(event) {
   logEvent(event.type === 'error' ? 'error' : 'info', 'voice-worker', event.type, event.type === 'error' ? { detail: String(event.message || '').slice(0, 500) } : event.type === 'armed' ? { sampleRate: event.sampleRate } : {});
   if (event.type === 'ready') {
     voiceReady = true;
-    sendWorker('configure_audio', { inputDeviceId: audioInputDeviceId, outputDeviceId: audioOutputDeviceId });
-    if (wakeWordEnabled) sendWorker('arm_wake');
+    sendWorker('configure_audio', { inputDeviceId: audioInputDeviceId, outputDeviceId: audioOutputDeviceId, conversationTimeoutSeconds });
+    if (wakeWordEnabled) {
+      sendWorker('arm_wake');
+      if (conversationActive) sendWorker('resume_conversation');
+    }
     else {
       setStatus('idle');
       setDetail(DEFAULT_DETAIL);
@@ -198,7 +207,21 @@ function handleWorkerMessage(event) {
     setDetail('Microphone on' + rateLabel + '. Say “Iris” or “Hey Iris” to wake me.');
     return;
   }
+  if (event.type === 'conversation_started') {
+    conversationActive = true;
+    return;
+  }
+  if (event.type === 'conversation_ended') {
+    conversationActive = false;
+    lastYouTubeSearchQuery = '';
+    if (wakeWordEnabled) {
+      setStatus('armed');
+      setDetail('Conversation ended after ' + conversationTimeoutSeconds + ' seconds of silence. Waiting for “Iris”.');
+    }
+    return;
+  }
   if (event.type === 'disarmed') {
+    conversationActive = false;
     if (status === 'paused') return;
     setStatus('idle');
     setDetail(DEFAULT_DETAIL);
@@ -215,7 +238,7 @@ function handleWorkerMessage(event) {
   }
   if (event.type === 'listening') {
     setMessage('');
-    setDetail('Wake word heard. Listening for your request…');
+    setDetail(conversationActive ? 'Conversation mode. Speak your next request.' : 'Wake word heard. Listening for your request…');
     setStatus('listening');
     return;
   }
@@ -226,7 +249,7 @@ function handleWorkerMessage(event) {
       if (wakeWordEnabled) {
         setStatus('armed');
         setDetail('I did not catch that. Say “ARIS” to try again.');
-        sendWorker('resume_wake');
+        resumeVoiceListening();
       } else {
         setStatus('idle');
         setDetail(DEFAULT_DETAIL);
@@ -247,6 +270,7 @@ function handleWorkerMessage(event) {
   if (event.type === 'error') {
     sendWorker('disarm');
     wakeWordEnabled = false;
+    conversationActive = false;
     setStatus('paused');
     setDetail(String(event.message || 'Voice service failed.'));
     updateTrayMenu();
@@ -328,6 +352,7 @@ function createVoiceWorker() {
 
 function toggleWakeWord() {
   wakeWordEnabled = !wakeWordEnabled;
+  if (!wakeWordEnabled) { conversationActive = false; lastYouTubeSearchQuery = ''; }
   clearTimeout(restartTimer);
   restartTimer = undefined;
   restartAttempts = 0;
@@ -345,6 +370,11 @@ function toggleWakeWord() {
   updateTrayMenu();
 }
 
+function resumeVoiceListening() {
+  if (!wakeWordEnabled) return false;
+  return sendWorker(conversationActive ? 'resume_conversation' : 'resume_wake');
+}
+
 function cancelCurrentTurn() {
   if (currentRequest) {
     currentRequest.abort();
@@ -356,7 +386,7 @@ function cancelCurrentTurn() {
     stopWorker();
     if (wakeWordEnabled) createVoiceWorker();
   } else if (wakeWordEnabled && voiceWorker) {
-    sendWorker('resume_wake');
+    resumeVoiceListening();
   }
   setMessage('');
   if (wakeWordEnabled) {
@@ -418,7 +448,8 @@ async function answerLocally(userText) {
         ? applyPreferenceRequest(preferencesPath(), preferenceRequest)
         : audioRequest
           ? await applyVoiceAudioRequest(audioRequest)
-          : await runLocalRequest(parsedAction, { approvedRoots: approvedRootsFromFile(rootsPath) });
+          : await runLocalRequest(parsedAction, { approvedRoots: approvedRootsFromFile(rootsPath), lastYouTubeSearchQuery });
+      if (parsedAction?.name === 'searchYouTube' && parsedAction.query) lastYouTubeSearchQuery = parsedAction.query;
       if (currentRequest !== controller || quitting) return;
       currentRequest = null;
       recordAction(result.action, result.ok === false ? 'failed' : 'completed');
@@ -490,26 +521,26 @@ async function answerLocally(userText) {
     if (localAction) recordAction(preferenceRequest ? preferenceRequest.action : audioRequest ? 'audio-' + audioRequest.kind : parsedAction.name, 'failed');
     currentRequest = null;
     if (error?.name === 'AbortError' || error?.name === 'TimeoutError') {
-      if (wakeWordEnabled) sendWorker('resume_wake');
+      if (wakeWordEnabled) resumeVoiceListening();
       setStatus(wakeWordEnabled ? 'armed' : 'idle');
       setDetail(wakeWordEnabled ? 'I could not finish that. Say “ARIS” to try again.' : DEFAULT_DETAIL);
     } else if (/non-local model endpoint/.test(String(error?.message))) {
       setStatus('paused');
       setDetail('ARIS only accepts a local Ollama endpoint.');
-      if (wakeWordEnabled) sendWorker('resume_wake');
+      if (wakeWordEnabled) resumeVoiceListening();
     } else if (audioRequest) {
       setStatus('idle');
       setDetail('I could not change that audio route. Refresh the device list in Audio Settings and try again.');
-      if (wakeWordEnabled) sendWorker('resume_wake');
+      if (wakeWordEnabled) resumeVoiceListening();
     } else if (localAction) {
       setStatus('idle');
       setDetail('I could not complete that local action. Check the Chrome installation or approved folder paths.');
-      if (wakeWordEnabled) sendWorker('resume_wake');
+      if (wakeWordEnabled) resumeVoiceListening();
     } else {
       setStatus('idle');
       const reason = /Local model is not installed/.test(String(error?.message)) ? error.message : 'Local Ollama is unavailable. Start Ollama and try again.';
       setDetail(reason + (wakeWordEnabled ? ' Say “ARIS” to try again.' : ' ' + DEFAULT_DETAIL));
-      if (wakeWordEnabled) sendWorker('resume_wake');
+      if (wakeWordEnabled) resumeVoiceListening();
     }
   }
 }
@@ -671,7 +702,7 @@ app.whenReady().then(() => {
     return;
   }
 
-  ({ startWithWindows, audioInputDeviceId, audioOutputDeviceId, allowVoiceDeviceSwitching } = loadSettings());
+  ({ startWithWindows, audioInputDeviceId, audioOutputDeviceId, allowVoiceDeviceSwitching, conversationTimeoutSeconds } = loadSettings());
   applyStartupSetting();
   logEvent('info', 'app', 'ARIS started', { version: app.getVersion(), packaged: app.isPackaged, debug: DEBUG_MODE });
   createOverlay();
@@ -761,7 +792,7 @@ async function applyVoiceAudioRequest(request) {
   if (request.kind === 'input') audioInputDeviceId = selected.id;
   else audioOutputDeviceId = selected.id;
   saveSettings();
-  if (voiceWorker && !voiceWorker.killed) sendWorker('configure_audio', { inputDeviceId: audioInputDeviceId, outputDeviceId: audioOutputDeviceId });
+  if (voiceWorker && !voiceWorker.killed) sendWorker('configure_audio', { inputDeviceId: audioInputDeviceId, outputDeviceId: audioOutputDeviceId, conversationTimeoutSeconds });
   return { action: 'audio-' + request.kind, text: 'ARIS will use ' + selected.name + ' for ' + (request.kind === 'input' ? 'your next microphone turn.' : 'speech output.') };
 }
 
@@ -785,7 +816,7 @@ function openAudioSettings() {
 ipcMain.handle('aris:audio:get', async (event) => {
   if (!isAudioSettingsSender(event)) throw new Error('Audio settings are available only in the settings window.');
   const devices = await discoverAudioDevices();
-  return { settings: { inputDeviceId: audioInputDeviceId, outputDeviceId: audioOutputDeviceId, allowVoiceDeviceSwitching }, devices };
+  return { settings: { inputDeviceId: audioInputDeviceId, outputDeviceId: audioOutputDeviceId, allowVoiceDeviceSwitching, conversationTimeoutSeconds }, devices };
 });
 ipcMain.handle('aris:audio:refresh', async (event) => {
   if (!isAudioSettingsSender(event)) throw new Error('Audio settings are available only in the settings window.');
@@ -800,9 +831,10 @@ ipcMain.handle('aris:audio:save', async (event, requested) => {
   audioInputDeviceId = valid.inputDeviceId;
   audioOutputDeviceId = valid.outputDeviceId;
   allowVoiceDeviceSwitching = valid.allowVoiceDeviceSwitching;
+  conversationTimeoutSeconds = CONVERSATION_TIMEOUT_OPTIONS.has(Number(requested?.conversationTimeoutSeconds)) ? Number(requested.conversationTimeoutSeconds) : DEFAULT_CONVERSATION_TIMEOUT_SECONDS;
   saveSettings();
-  if (voiceWorker && !voiceWorker.killed) sendWorker('configure_audio', { inputDeviceId: audioInputDeviceId, outputDeviceId: audioOutputDeviceId });
-  return { settings: valid, devices };
+  if (voiceWorker && !voiceWorker.killed) sendWorker('configure_audio', { inputDeviceId: audioInputDeviceId, outputDeviceId: audioOutputDeviceId, conversationTimeoutSeconds });
+  return { settings: { ...valid, conversationTimeoutSeconds }, devices };
 });
 ipcMain.handle('aris:audio:open-mic-privacy', (event) => {
   if (!isAudioSettingsSender(event)) throw new Error('Audio settings are available only in the settings window.');

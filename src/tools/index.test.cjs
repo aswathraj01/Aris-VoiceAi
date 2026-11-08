@@ -3,9 +3,12 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { parseLocalRequest, runLocalRequest, searchFileNames } = require('./index.cjs');
+const { extractFirstYouTubeVideoId, parseLocalRequest, runLocalRequest, searchFileNames } = require('./index.cjs');
 
 test('parses only the supported local actions', () => {
+  assert.deepEqual(parseLocalRequest('Hey Eris, open Chrome'), { name: 'openChrome' });
+  assert.deepEqual(parseLocalRequest('search YouTube for ambient music'), { name: 'searchYouTube', query: 'ambient music' });
+  assert.deepEqual(parseLocalRequest('open the first video'), { name: 'openFirstYouTubeResult' });
   assert.deepEqual(parseLocalRequest('Can you open Chrome?'), { name: 'openChrome' });
   assert.deepEqual(parseLocalRequest('please open Gmail'), { name: 'openGmail' });
   assert.deepEqual(parseLocalRequest('find the file named invoice'), { name: 'searchFiles', query: 'invoice' });
@@ -43,4 +46,17 @@ test('launches only the preselected Chrome action without a shell', async () => 
   assert.equal(captured.url, 'https://mail.google.com/');
   assert.equal(launched.action, 'openGmail');
   assert.match(launched.text, /Gmail/);
+});
+
+
+test('opens the first YouTube result from the previous search in Chrome', async () => {
+  let opened;
+  const result = await runLocalRequest({ name: 'openFirstYouTubeResult' }, {
+    lastYouTubeSearchQuery: 'ambient music',
+    fetchImpl: async () => ({ ok: true, text: async () => '<script>{"videoRenderer":{"videoId":"abcdefghijk"}}</script>' }),
+    launchChrome: async (url) => { opened = url; }
+  });
+  assert.equal(opened, 'https://www.youtube.com/watch?v=abcdefghijk');
+  assert.equal(result.action, 'openFirstYouTubeResult');
+  assert.equal(extractFirstYouTubeVideoId('{"videoId":"abcdefghijk"}'), 'abcdefghijk');
 });

@@ -3,6 +3,7 @@ const outputSelect = document.getElementById('outputDevice');
 const inputDetected = document.getElementById('inputDetected');
 const outputDetected = document.getElementById('outputDetected');
 const allowVoiceSwitching = document.getElementById('voiceSwitching');
+const conversationTimeout = document.getElementById('conversationTimeout');
 const status = document.getElementById('status');
 const refreshButton = document.getElementById('refresh');
 const saveButton = document.getElementById('save');
@@ -47,6 +48,7 @@ function render(data) {
   inputDetected.textContent = 'Windows default: ' + (defaultInput?.name || 'none detected') + ' · ARIS route: ' + (selectedInput ? selectedInput.name + ' — ' + selectedInput.hostApi + (selectedInput.defaultSampleRate ? ' · ' + Math.round(selectedInput.defaultSampleRate / 1000) + ' kHz' : '') : 'Windows default');
   outputDetected.textContent = 'Windows default: ' + (defaultOutput?.name || 'none detected') + ' · ARIS route: ' + (selectedOutput ? selectedOutput.name + ' — ' + selectedOutput.hostApi + (selectedOutput.defaultSampleRate ? ' · ' + Math.round(selectedOutput.defaultSampleRate / 1000) + ' kHz' : '') : 'Windows default');
   allowVoiceSwitching.checked = currentSettings.allowVoiceDeviceSwitching;
+  conversationTimeout.value = String(currentSettings.conversationTimeoutSeconds || 15);
   status.textContent = currentDevices.inputs.length + ' microphone(s), ' + currentDevices.outputs.length + ' output device(s) found. Detection did not open them.';
 }
 
@@ -68,7 +70,8 @@ saveButton.addEventListener('click', async () => {
     const result = await window.aris.saveAudioSettings({
       inputDeviceId: inputSelect.value,
       outputDeviceId: outputSelect.value,
-      allowVoiceDeviceSwitching: allowVoiceSwitching.checked
+      allowVoiceDeviceSwitching: allowVoiceSwitching.checked,
+      conversationTimeoutSeconds: Number(conversationTimeout.value)
     });
     render(result);
     status.textContent = 'Saved. The microphone choice applies to wake-word listening.';

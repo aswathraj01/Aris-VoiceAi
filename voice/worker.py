@@ -10,7 +10,6 @@ import wave
 from pathlib import Path
 
 import numpy as np
-import pyttsx3
 import sounddevice as sd
 from vosk import KaldiRecognizer, Model, SetLogLevel
 
@@ -19,6 +18,11 @@ SAMPLE_RATE = 16000
 active_sample_rate = SAMPLE_RATE
 BLOCK_SIZE = 4000
 COMMAND_TIMEOUT = 9.0
+CONVERSATION_TIMEOUT_OPTIONS = {10, 15, 20}
+DEFAULT_CONVERSATION_TIMEOUT = 15
+conversation_timeout_seconds = DEFAULT_CONVERSATION_TIMEOUT
+conversation_active = False
+last_voice_activity_at = 0.0
 WAKE_GRAMMAR = json.dumps(["aries", "hey aries", "iris", "hey iris", "irish", "hey irish", "aris", "hey aris", "[unk]"])
 WAKE_ACKNOWLEDGMENT = "Mm-hmm."
 DEBUG_MODE = os.environ.get("ARIS_DEBUG") == "1"
@@ -193,15 +197,39 @@ def begin_wake_monitoring():
     send("armed", sampleRate=active_sample_rate)
 
 
-def begin_command_capture():
-    global recognizer, mode, command_started_at
+def begin_command_capture(conversation=False):
+    global recognizer, mode, command_started_at, last_voice_activity_at
     close_input_stream()
     clear_audio_queue()
     recognizer = make_recognizer()
     command_started_at = time.monotonic()
-    mode = "command"
+    mode = "conversation" if conversation else "command"
+    last_voice_activity_at = time.monotonic()
     open_input_stream()
     send("listening")
+
+
+def start_conversation():
+    global conversation_active
+    conversation_active = True
+    send("conversation_started", timeoutSeconds=conversation_timeout_seconds)
+
+
+def end_conversation():
+    global conversation_active, recognizer, mode, wake_audio_buffer
+    close_input_stream()
+    clear_audio_queue()
+    recognizer = None
+    wake_audio_buffer = []
+    mode = "idle"
+    conversation_active = False
+    send("conversation_ended", timeoutSeconds=conversation_timeout_seconds)
+    if armed:
+        try:
+            begin_wake_monitoring()
+        except Exception as exc:
+            armed = False
+            send("error", message="Wake listener could not restart after conversation: " + type(exc).__name__ + ": " + str(exc)[:240])
 
 
 def acknowledge_and_listen():
@@ -211,12 +239,13 @@ def acknowledge_and_listen():
     recognizer = None
     mode = "awaiting"
     send("acknowledging")
+    start_conversation()
     try:
         speak_text(WAKE_ACKNOWLEDGMENT)
     except Exception as exc:
         sys.stderr.write("Wake acknowledgment failed: " + type(exc).__name__ + ": " + str(exc) + "\n")
         sys.stderr.flush()
-    begin_command_capture()
+    begin_command_capture(conversation=True)
 
 
 def wake_tail(text):
@@ -251,15 +280,19 @@ def finish_command(text):
 
 
 def process_audio():
-    global recognizer, wake_audio_buffer, mode, armed
+    global recognizer, wake_audio_buffer, mode, armed, last_voice_activity_at
     try:
         audio = AUDIO_QUEUE.get_nowait()
     except queue.Empty:
-        if mode == "command" and time.monotonic() - command_started_at > COMMAND_TIMEOUT:
+        if mode == "conversation" and time.monotonic() - last_voice_activity_at >= conversation_timeout_seconds:
+            end_conversation()
+        elif mode == "command" and time.monotonic() - command_started_at > COMMAND_TIMEOUT:
             finish_command("")
         return
 
     try:
+        if mode == "conversation" and np.sqrt(np.mean(np.frombuffer(audio, dtype=np.int16).astype(np.float32) ** 2)) >= 650:
+            last_voice_activity_at = time.monotonic()
         if mode == "wake":
             wake_audio_buffer.append(audio)
             if len(wake_audio_buffer) > MAX_WAKE_BUFFER_BLOCKS:
@@ -276,11 +309,12 @@ def process_audio():
             full_text = transcribe_audio(wake_audio_buffer)
             full_tail = wake_tail(full_text)
             wake_audio_buffer = []
+            start_conversation()
             if full_tail:
                 finish_command(full_tail)
             else:
                 acknowledge_and_listen()
-        elif mode == "command":
+        elif mode in {"command", "conversation"}:
             if text:
                 finish_command(text)
             elif time.monotonic() - command_started_at > COMMAND_TIMEOUT:
@@ -297,34 +331,30 @@ def process_audio():
         send("error", message="Speech recognition stopped after an audio error: " + type(exc).__name__ + ": " + str(exc)[:240])
 
 
-def synthesize_to_wav(output_path, text):
-    engine = pyttsx3.init()
-    engine.setProperty("rate", 165)
-    engine.save_to_file(text, str(output_path))
-    engine.runAndWait()
-    engine.stop()
-    if not Path(output_path).is_file() or Path(output_path).stat().st_size < 44:
-        raise RuntimeError("Speech engine did not create a valid WAV file.")
-
-
 def speak_text(text):
     output_device = resolve_device_id(selected_output_device_id, "outputs") if selected_output_device_id else None
+    script_path = Path(__file__).resolve().with_name("synthesize.ps1")
+    if not script_path.is_file():
+        raise RuntimeError("Windows speech synthesis script is missing: " + str(script_path))
     with tempfile.TemporaryDirectory(prefix="aris-speech-") as temp_dir:
         wav_path = Path(temp_dir) / "speech.wav"
-        command = [sys.executable, str(Path(__file__).resolve()), "--synthesize-to-wav", str(wav_path), str(text)[:1600]]
+        command = [
+            "powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-STA",
+            "-ExecutionPolicy", "Bypass", "-File", str(script_path), str(wav_path), str(text)[:1600],
+        ]
         try:
             result = subprocess.run(
-                command, capture_output=True, text=True, timeout=30,
+                command, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=20,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
         except subprocess.TimeoutExpired as exc:
-            raise RuntimeError("Offline speech synthesis timed out after 30 seconds.") from exc
+            raise RuntimeError("Windows speech synthesis timed out after 20 seconds.") from exc
         if result.returncode != 0:
-            reason = (result.stderr or result.stdout or "Speech synthesis process failed.").strip()
+            reason = (result.stderr or result.stdout or "Windows speech synthesis failed.").strip()
             raise RuntimeError(reason[-600:])
         with wave.open(str(wav_path), "rb") as audio:
             if audio.getcomptype() != "NONE" or audio.getsampwidth() != 2:
-                raise RuntimeError("Speech engine produced an unsupported audio format.")
+                raise RuntimeError("Windows speech synthesizer produced an unsupported audio format.")
             channels = audio.getnchannels()
             sample_rate = audio.getframerate()
             samples = np.frombuffer(audio.readframes(audio.getnframes()), dtype=np.int16)
@@ -333,23 +363,8 @@ def speak_text(text):
             sd.play(samples, samplerate=sample_rate, device=output_device, blocking=True)
 
 
-def synthesize_to_wav_cli():
-    if len(sys.argv) < 4:
-        sys.stderr.write("Expected output WAV path and speech text.\n")
-        return 2
-    try:
-        synthesize_to_wav(sys.argv[2], " ".join(sys.argv[3:]))
-        return 0
-    except Exception as exc:
-        if DEBUG_MODE:
-            import traceback
-            traceback.print_exc(file=sys.stderr)
-        else:
-            sys.stderr.write(type(exc).__name__ + ": " + str(exc) + "\n")
-        return 2
-
 def main():
-    global model, armed, mode, selected_input_device_id, selected_output_device_id
+    global model, armed, mode, selected_input_device_id, selected_output_device_id, conversation_timeout_seconds, conversation_active
     model_path = Path(sys.argv[1]).expanduser() if len(sys.argv) > 1 else Path("")
     if not model_path.is_dir():
         send("error", message="Offline speech model is missing at " + str(model_path) + ". Run the voice setup instructions.")
@@ -374,7 +389,7 @@ def main():
         except queue.Empty:
             pass
 
-        if is_listening and mode in {"wake", "command"}:
+        if is_listening and mode in {"wake", "command", "conversation"}:
             process_audio()
         if command is None:
             continue
@@ -384,9 +399,13 @@ def main():
             previous_input = selected_input_device_id
             selected_input_device_id = str(command.get("inputDeviceId") or "")[:500]
             selected_output_device_id = str(command.get("outputDeviceId") or "")[:500]
+            requested_timeout = int(command.get("conversationTimeoutSeconds", DEFAULT_CONVERSATION_TIMEOUT))
+            conversation_timeout_seconds = requested_timeout if requested_timeout in CONVERSATION_TIMEOUT_OPTIONS else DEFAULT_CONVERSATION_TIMEOUT
             send("audio_configured")
             if mode == "wake" and previous_input != selected_input_device_id:
                 begin_wake_monitoring()
+            elif mode == "conversation" and previous_input != selected_input_device_id:
+                begin_command_capture(conversation=True)
         elif action == "arm_wake":
             armed = True
             if mode != "awaiting":
@@ -406,16 +425,20 @@ def main():
             clear_audio_queue()
             recognizer = None
             mode = "idle"
+            conversation_active = False
             send("disarmed")
         elif action == "cancel_command":
-            if mode == "command":
+            if mode in {"command", "conversation"}:
                 close_input_stream()
                 clear_audio_queue()
                 recognizer = None
                 mode = "idle"
                 if armed:
                     try:
-                        begin_wake_monitoring()
+                        if conversation_active:
+                            begin_command_capture(conversation=True)
+                        else:
+                            begin_wake_monitoring()
                     except Exception as exc:
                         armed = False
                         if DEBUG_MODE:
@@ -424,6 +447,15 @@ def main():
                         send("error", message="Microphone could not restart: " + type(exc).__name__ + ": " + str(exc)[:240])
                 else:
                     send("disarmed")
+        elif action == "resume_conversation":
+            if armed and conversation_active and mode in {"awaiting", "idle", "wake"}:
+                try:
+                    begin_command_capture(conversation=True)
+                except Exception as exc:
+                    if DEBUG_MODE:
+                        import traceback
+                        traceback.print_exc(file=sys.stderr)
+                    send("error", message="Conversation microphone could not restart: " + type(exc).__name__ + ": " + str(exc)[:240])
         elif action == "resume_wake":
             if armed and mode == "awaiting":
                 mode = "idle"
@@ -448,7 +480,10 @@ def main():
                     send("spoken")
                     if armed:
                         mode = "idle"
-                        begin_wake_monitoring()
+                        if conversation_active:
+                            begin_command_capture(conversation=True)
+                        else:
+                            begin_wake_monitoring()
                 except Exception as exc:
                     mode = "idle"
                     if DEBUG_MODE:
@@ -457,19 +492,21 @@ def main():
                     send("error", message="Speech output failed: " + type(exc).__name__ + ": " + str(exc)[:240])
                     if armed:
                         try:
-                            begin_wake_monitoring()
+                            if conversation_active:
+                                begin_command_capture(conversation=True)
+                            else:
+                                begin_wake_monitoring()
                         except Exception:
                             armed = False
         elif action == "shutdown":
             armed = False
+            conversation_active = False
             close_input_stream()
             clear_audio_queue()
             return 0
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "--synthesize-to-wav":
-        raise SystemExit(synthesize_to_wav_cli())
     if len(sys.argv) > 1 and sys.argv[1] == "--list-devices":
         raise SystemExit(list_devices_cli())
     raise SystemExit(main())
